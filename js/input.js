@@ -210,6 +210,8 @@ class Input {
       if (code === 'F1' || code === 'F3' || code === 'F5' || code === 'Tab' || code.startsWith('Arrow') || code === 'Space') e.preventDefault();
       if (code === 'Escape') {
         if (g.ui.modal) { g.ui.closeModal(); e.preventDefault(); return; }
+        // 마우스 고정이 아닐 때(따라보기·끌어보기)도 Esc로 메뉴 열기 (고정 중이면 고정 풀림 이벤트가 엶)
+        if (!this.locked && !g.player.dead) { e.preventDefault(); g.ui.openPause(); return; }
       }
       if (g.ui.modal) {
         if (code === 'KeyE' && g.ui.modal !== 'code' && g.ui.modal !== 'pause' && g.ui.modal !== 'settings' && g.ui.modal !== 'avatar') g.ui.closeModal();
@@ -224,6 +226,8 @@ class Input {
           case 'KeyT': case 'Enter': e.preventDefault(); g.ui.openChat(''); return;
           case 'Slash': e.preventDefault(); g.ui.openChat('/'); return;
           case 'KeyB': g.ui.openCode(); return;
+          case 'KeyP': g.ui.openPause(); return;
+          case 'KeyL': if (g.ui.showAdvancements) g.ui.showAdvancements(); return;
           case 'KeyQ': this.ev.drop = true; this.ev.dropAll = e.ctrlKey; return;
           case 'KeyV': this.cycleLookMode(); return;
           case 'F1': g.settings.hideHud = !g.settings.hideHud; g.ui.applyHudVisibility(); return;

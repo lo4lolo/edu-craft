@@ -66,6 +66,8 @@ function faceUV(f, x, y, z) {
     case 3: return [x, 1 - y]; case 4: return [z, 1 - y]; default: return [1 - z, 1 - y];
   }
 }
+const FACE_UV = FACES.map((F, f) => F.pts.map(p => faceUV(f, p[0], p[1], p[2])));
+const CF_AO = new Float32Array(4), CF_SK = new Float32Array(4), CF_BL = new Float32Array(4);
 function rotUV(u, v, r) { switch (r) { case 1: return [v, 1 - u]; case 2: return [1 - u, 1 - v]; case 3: return [1 - v, u]; } return [u, v]; }
 const FACING_ROT = [0, 0, 0, 2, 3, 1]; // 2북→0, 5동→1, 3남→2, 4서→3
 
@@ -143,18 +145,23 @@ class Mesher {
     let maxY = 0;
     for (let i = 0; i < 256; i++) if (c.heights[i] > maxY) maxY = c.heights[i];
     // 높이맵은 불투명 블록 기준이므로 유리/횃불 등 투명 블록이 더 위에 있을 수 있음 → 전체 검사하되 빈 층은 건너뜀
+    let minY = HEIGHT, maxY2 = -1;
     for (let y = 0; y < HEIGHT; y++) {
       let any = false;
       const base = y << 8;
       for (let i = 0; i < 256; i++) if (c.ids[base + i]) { any = true; break; }
       if (!any) continue;
+      if (y < minY) minY = y; maxY2 = y;
       for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
         const pi = pidx(x, y, z);
         const id = P_ID[pi];
         if (id === 0) continue;
+        // (최적화) 여섯 면이 모두 불투명 블록에 막힌 불투명 블록은 그릴 면이 없음 — 땅속 블록 대부분을 바로 건너뜀
+        if (IS_OPAQUE[id] && IS_OPAQUE[P_ID[pi + 1]] && IS_OPAQUE[P_ID[pi - 1]] && IS_OPAQUE[P_ID[pi + PX]] && IS_OPAQUE[P_ID[pi - PX]] && IS_OPAQUE[P_ID[pi + PXZ]] && IS_OPAQUE[P_ID[pi - PXZ]]) continue;
         this.block(x, y, z, pi, id, P_META[pi]);
       }
     }
+    c.minY = Math.max(0, minY - 1); c.maxY = Math.min(HEIGHT, maxY2 + 2);
     return this.bufs.map(b => b.n ? b.slice() : null);
   }
   biomeTint(x, z) {
@@ -193,12 +200,13 @@ class Mesher {
       this.cubeFace(buf, x, y, z, pi, f, layer, flags | f, t, opaque);
     }
   }
+  // (최적화) 면마다 배열을 새로 만들지 않고 미리 만든 배열·UV 표를 씀 — 청크 하나에 면이 수만 개라 GC 가 크게 줄어듦
   cubeFace(buf, x, y, z, pi, f, layer, flags, tint, doAO) {
     const F = FACES[f];
     const fi = pi + NOFF[f];
     const L0 = P_LIGHT[fi];
     const tr = tint ? tint[0] : TINT_ONE, tg = tint ? tint[1] : TINT_ONE, tb = tint ? tint[2] : TINT_ONE;
-    const ao = [0, 0, 0, 0], sk = [0, 0, 0, 0], bl = [0, 0, 0, 0];
+    const ao = CF_AO, sk = CF_SK, bl = CF_BL;
     for (let k = 0; k < 4; k++) {
       const o = F.ao[k];
       const i1 = pi + o[0], i2 = pi + o[1], i3 = pi + o[2];
@@ -210,10 +218,9 @@ class Mesher {
       if (!s3 && !(s1 && s2)) { ss += P_LIGHT[i3] >> 4; bb += P_LIGHT[i3] & 15; cnt++; }
       sk[k] = ss / cnt; bl[k] = bb / cnt;
     }
-    const order = (ao[1] + ao[3] > ao[0] + ao[2]) ? [1, 2, 3, 0] : [0, 1, 2, 3];
-    for (const k of order) {
-      const p = F.pts[k];
-      const uv = faceUV(f, p[0], p[1], p[2]);
+    const flip = ao[1] + ao[3] > ao[0] + ao[2] ? 1 : 0, uvs = FACE_UV[f];
+    for (let j = 0; j < 4; j++) {
+      const k = (j + flip) & 3, p = F.pts[k], uv = uvs[k];
       buf.vert(x + p[0], y + p[1], z + p[2], uv[0], uv[1], layer, flags, sk[k] * 17 | 0, bl[k] * 17 | 0, ao[k] * 85, 0, tr, tg, tb);
     }
   }

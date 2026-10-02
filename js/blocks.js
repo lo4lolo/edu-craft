@@ -235,6 +235,7 @@ function defineBlocks() {
     texf: (m, f) => f === 1 ? T(m & 8 ? 'conveyor_top_on' : 'conveyor_top') : f === 0 ? T('smooth_stone') : T('conveyor_side'), desc: '전기를 받으면 위에 올라간 플레이어·몹·아이템을 화살표 방향으로 옮겨요.' });
   defineSurvivalBlocks();
   if (typeof defineDimBlocks === 'function') defineDimBlocks();
+  if (typeof defineVanillaBlocks === 'function') defineVanillaBlocks();
   // 설명 기본값
   for (const d of BLOCKS) if (d) {
     if (!d.tex && !d.texf) d.tex = faces('stone');

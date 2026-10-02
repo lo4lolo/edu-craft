@@ -62,6 +62,7 @@ function defineItems() {
   it(332, 'multimeter', '멀티미터', { stack: 1, cat: 'redstone', desc: '들고 있으면 바라보는 블록의 전력 세기를 보여줍니다.' });
   defineSurvivalItems();
   if (typeof defineDimItems === 'function') defineDimItems();
+  if (typeof defineVanillaItems === 'function') defineVanillaItems();
   for (const d of ITEMS) if (d && d.tex && !d.block && TEX.byName[d.tex] === undefined) d.tex = 'stick';
 }
 
@@ -158,6 +159,7 @@ function defineRecipes() {
   S(['redstone', 'iron_ingot', 'stick', 'glass'], 'builder_remote');
   defineSurvivalRecipes();
   if (typeof defineDimRecipes === 'function') defineDimRecipes();
+  if (typeof defineVanillaRecipes === 'function') defineVanillaRecipes();
   // 이름 → id 변환
   const res = (k) => k.startsWith('#') ? GROUPS[k.slice(1)] : [I(k)];
   for (const r of RECIPES) {
@@ -223,6 +225,7 @@ function defineSmelting() {
   for (const t of ['wood_pickaxe', 'wood_axe', 'wood_shovel', 'wood_sword', 'wood_hoe']) f(t, 200);
   defineSurvivalSmelting();
   if (typeof defineDimSmelting === 'function') defineDimSmelting();
+  if (typeof defineVanillaSmelting === 'function') defineVanillaSmelting();
 }
 
 // ---------------- 아이콘 시트 ----------------

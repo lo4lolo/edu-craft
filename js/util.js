@@ -203,33 +203,75 @@ function aabbInFrustum(planes, x0, y0, z0, x1, y1, z1) {
   return true;
 }
 
-// 간단한 수식 계산기 (블록코딩 입력칸용: 숫자, 변수, + - * / % ( ) )
-function evalExpr(str, vars) {
-  const s = String(str).replace(/\s+/g, '');
+// 수식 계산기 (블록코딩 입력칸용)
+//  숫자, 변수, + - * / % ( ), 비교(< > <= >= == != =), 논리(and or not, && || !, 그리고 또는 아니다),
+//  함수 random(a,b)/무작위(a,b), abs, min, max, floor, round, sqrt, sin/cos(도), 목록 [a,b,c][i]
+//  처음 볼 때 한 번만 해석해 함수로 만들어 둠 (빌더봇이 빠르게 돌 때 같은 식을 수천 번 계산하므로)
+const EXPR_CACHE = new Map();
+const EXPR_FN = {
+  random: (a, b) => { if (b === undefined) { b = a; a = 1; } const lo = Math.ceil(Math.min(a, b)), hi = Math.floor(Math.max(a, b)); return lo + Math.floor(Math.random() * (hi - lo + 1)); },
+  abs: Math.abs, min: Math.min, max: Math.max, floor: Math.floor, round: Math.round, sqrt: (v) => Math.sqrt(Math.max(0, v)),
+  sin: (d) => Math.sin(d * Math.PI / 180), cos: (d) => Math.cos(d * Math.PI / 180), pow: Math.pow,
+};
+EXPR_FN['무작위'] = EXPR_FN.random; EXPR_FN['절댓값'] = EXPR_FN.abs; EXPR_FN['반올림'] = EXPR_FN.round; EXPR_FN['내림'] = EXPR_FN.floor;
+function compileExpr(src) {
+  const toks = [], re = /\s*(\d*\.?\d+|[a-zA-Z가-힣_][a-zA-Z0-9가-힣_]*|<=|>=|==|!=|&&|\|\||[-+*/%()<>=!,\[\]])/y;
+  let m; re.lastIndex = 0;
+  while (re.lastIndex < src.length && (m = re.exec(src))) toks.push(m[1]);
   let i = 0;
-  function num() {
-    if (s[i] === '(') { i++; const v = add(); if (s[i] === ')') i++; return v; }
-    if (s[i] === '-') { i++; return -num(); }
-    let m = /^[0-9]*\.?[0-9]+/.exec(s.slice(i));
-    if (m) { i += m[0].length; return parseFloat(m[0]); }
-    m = /^[a-zA-Z가-힣_][a-zA-Z0-9가-힣_]*/.exec(s.slice(i));
-    if (m) { i += m[0].length; const v = vars && vars[m[0]]; return typeof v === 'number' ? v : 0; }
-    i++; return 0;
-  }
-  function mul() {
-    let v = num();
-    while (s[i] === '*' || s[i] === '/' || s[i] === '%') {
-      const op = s[i++]; const r = num();
-      v = op === '*' ? v * r : op === '/' ? (r ? v / r : 0) : (r ? v % r : 0);
+  const peek = () => toks[i], next = () => toks[i++];
+  const WORD_OR = new Set(['or', '||', '또는']), WORD_AND = new Set(['and', '&&', '그리고']), WORD_NOT = new Set(['not', '!', '아니다']);
+  const num = (v) => typeof v === 'number' && isFinite(v) ? v : 0;
+  function primary() {
+    const t = next();
+    if (t === undefined) return () => 0;
+    if (t === '(') { const e = or(); if (peek() === ')') i++; return e; }
+    if (t === '-') { const e = unary(); return (v) => -e(v); }
+    if (t === '[') {
+      const items = []; while (peek() !== undefined && peek() !== ']') { items.push(or()); if (peek() === ',') i++; else break; }
+      if (peek() === ']') i++;
+      if (peek() === '[') { i++; const idx = or(); if (peek() === ']') i++; return (v) => { if (!items.length) return 0; const k = Math.round(num(idx(v))); return items[((k % items.length) + items.length) % items.length](v); }; }
+      return items.length ? items[0] : () => 0;
     }
-    return v;
+    if (/^\d|^\./.test(t)) { const n = parseFloat(t); return () => n; }
+    if (/^[a-zA-Z가-힣_]/.test(t)) {
+      if (t === 'true' || t === '참') return () => 1;
+      if (t === 'false' || t === '거짓') return () => 0;
+      if (peek() === '(' && EXPR_FN[t.toLowerCase ? t.toLowerCase() : t]) {
+        i++; const args = [];
+        while (peek() !== undefined && peek() !== ')') { args.push(or()); if (peek() === ',') i++; else break; }
+        if (peek() === ')') i++;
+        const f = EXPR_FN[t.toLowerCase()];
+        return (v) => num(f(...args.map(a => a(v))));
+      }
+      return (v) => { const x = v && v[t]; return typeof x === 'number' ? x : 0; };
+    }
+    return () => 0;
   }
-  function add() {
-    let v = mul();
-    while (s[i] === '+' || s[i] === '-') { const op = s[i++]; const r = mul(); v = op === '+' ? v + r : v - r; }
-    return v;
+  function unary() { if (WORD_NOT.has(peek())) { i++; const e = unary(); return (v) => e(v) ? 0 : 1; } if (peek() === '-') { i++; const e = unary(); return (v) => -e(v); } return primary(); }
+  function mul() {
+    let l = unary();
+    while (peek() === '*' || peek() === '/' || peek() === '%') { const op = next(), r = unary(), a = l; l = op === '*' ? (v) => a(v) * r(v) : op === '/' ? (v) => { const d = r(v); return d ? a(v) / d : 0; } : (v) => { const d = r(v); return d ? a(v) % d : 0; }; }
+    return l;
   }
-  try { const v = add(); return isFinite(v) ? v : 0; } catch (e) { return 0; }
+  function add() { let l = mul(); while (peek() === '+' || peek() === '-') { const op = next(), r = mul(), a = l; l = op === '+' ? (v) => a(v) + r(v) : (v) => a(v) - r(v); } return l; }
+  function cmp() {
+    let l = add();
+    while (['<', '>', '<=', '>=', '==', '!=', '='].includes(peek())) {
+      const op = next(), r = add(), a = l;
+      l = op === '<' ? (v) => +(a(v) < r(v)) : op === '>' ? (v) => +(a(v) > r(v)) : op === '<=' ? (v) => +(a(v) <= r(v)) : op === '>=' ? (v) => +(a(v) >= r(v)) : op === '!=' ? (v) => +(a(v) !== r(v)) : (v) => +(Math.abs(a(v) - r(v)) < 1e-9);
+    }
+    return l;
+  }
+  function and() { let l = cmp(); while (WORD_AND.has(peek())) { i++; const r = cmp(), a = l; l = (v) => +(!!a(v) && !!r(v)); } return l; }
+  function or() { let l = and(); while (WORD_OR.has(peek())) { i++; const r = and(), a = l; l = (v) => +(!!a(v) || !!r(v)); } return l; }
+  try { const f = or(); return (v) => { try { return num(f(v)); } catch (e) { return 0; } }; } catch (e) { return () => 0; }
+}
+function evalExpr(str, vars) {
+  const s = String(str);
+  let f = EXPR_CACHE.get(s);
+  if (!f) { f = compileExpr(s); if (EXPR_CACHE.size > 2000) EXPR_CACHE.clear(); EXPR_CACHE.set(s, f); }
+  return f(vars);
 }
 
 function fmtKey(x, y, z) { return x + ',' + y + ',' + z; }
@@ -247,7 +289,7 @@ const isTouchDevice = () => {
 // 예전 index.html + 새 js 파일이 섞여 "○○ is not defined" 오류가 날 수 있어요.
 // 필요한 기능이 모두 읽혔는지 확인하고, 빠졌으면 주소에 ?r=시각 을 붙여 한 번만 새로 불러와요.
 // ---------------------------------------------------------------------
-const REQUIRED_GLOBALS = ['buildSurvivalTextures', 'Survival', 'Game', 'defineDimBlocks'];
+const REQUIRED_GLOBALS = ['buildSurvivalTextures', 'Survival', 'Game', 'defineDimBlocks', 'defineVanillaBlocks', 'packFile', 'compileExpr'];
 function reloadFresh(reason) {
   try {
     if (sessionStorage.getItem('educraft.freshReload') === '1') return false;   // 한 번만

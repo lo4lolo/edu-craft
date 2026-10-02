@@ -469,6 +469,7 @@ class Renderer {
       return m;
     });
   }
+  freeLines(L) { const gl = this.gl; if (L && L.vao) { gl.deleteBuffer(L.vbo); gl.deleteVertexArray(L.vao); L.vao = L.vbo = null; } }
   deleteChunkMesh(c) {
     if (!c.mesh) return;
     const gl = this.gl;
@@ -663,7 +664,7 @@ class Renderer {
       const ox = c.cx * 16 - cam[0], oz = c.cz * 16 - cam[2];
       c._rel = [ox, -cam[1], oz];
       c._dist = (ox + 8) * (ox + 8) + (oz + 8) * (oz + 8);
-      c._vis = aabbInFrustum(planes, ox, -cam[1], oz, ox + 16, HEIGHT - cam[1], oz + 16);
+      c._vis = aabbInFrustum(planes, ox, (c.minY || 0) - cam[1], oz, ox + 16, (c.maxY || HEIGHT) - cam[1], oz + 16);
       list.push(c);
     }
     list.sort((a, b) => a._dist - b._dist);
@@ -777,6 +778,26 @@ class Renderer {
       gl.bindVertexArray(this.lineVAO); gl.bindBuffer(gl.ARRAY_BUFFER, this.lineVBO);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(st.selLines), gl.DYNAMIC_DRAW);
       gl.drawArrays(gl.LINES, 0, st.selLines.length / 3);
+    }
+    // 빌더봇 미리보기 테두리 (한 번 올려 두고 원점만 옮겨 그림). 땅속도 흐리게 보이게 두 번
+    if (st.extraLines && st.extraLines.length) {
+      pr = this.progs.line; gl.useProgram(pr.p);
+      const T = this._elT || (this._elT = M4.create()), MV = this._elM || (this._elM = M4.create());
+      for (const L of st.extraLines) {
+        if (!L.vao) {
+          L.vbo = gl.createBuffer(); L.vao = gl.createVertexArray();
+          gl.bindVertexArray(L.vao); gl.bindBuffer(gl.ARRAY_BUFFER, L.vbo); gl.bufferData(gl.ARRAY_BUFFER, L.data, gl.STATIC_DRAW);
+          gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
+          L.count = L.data.length / 3;
+        }
+        M4.identity ? M4.identity(T) : T.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+        T[12] = L.origin[0] - cam[0]; T[13] = L.origin[1] - cam[1]; T[14] = L.origin[2] - cam[2];
+        M4.mul(MV, this.viewProj, T);
+        gl.uniformMatrix4fv(pr.u.u_viewProj, false, MV);
+        gl.bindVertexArray(L.vao);
+        gl.disable(gl.DEPTH_TEST); gl.uniform4f(pr.u.u_color, L.color[0], L.color[1], L.color[2], 0.22); gl.drawArrays(gl.LINES, 0, L.count);
+        gl.enable(gl.DEPTH_TEST); gl.uniform4f(pr.u.u_color, L.color[0], L.color[1], L.color[2], L.color[3]); gl.drawArrays(gl.LINES, 0, L.count);
+      }
     }
     gl.disable(gl.BLEND);
     // 손 / 들고 있는 아이템

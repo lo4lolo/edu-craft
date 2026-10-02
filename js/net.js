@@ -5,9 +5,48 @@
 //  2) 방 코드(P2P): PeerJS 로 연결 (신호 교환에만 인터넷 사용)
 //  방장(호스트)이 세계를 계산하고, 참가자는 블록 변경을 요청한다.
 // =====================================================================
-const PEERJS_URL = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
+const PEERJS_URLS = ['https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js', 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'];
 const PEER_PREFIX = 'educraft-v1-';
+// 통신 규칙 번호: 서로 다른 버전(예: 웨일은 옛 버전이 캐시에, 엣지는 새 버전)이 섞이면 알려 주려고
+const NET_PROTO = 2;
+// 연결 길 찾기: 학교 와이파이처럼 기기끼리 바로 연결이 막힌 곳에서는 TURN 중계 서버로 우회
+const ICE_SERVERS = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+  { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
+  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' },
+];
+const PEER_OPTS = { debug: 0, config: { iceServers: ICE_SERVERS, sdpSemantics: 'unified-plan' } };
+// P2P 메시지: JSON 글자로 보내고, 길면 잘게 나눠 보냄 (브라우저·기기마다 한 번에 보낼 수 있는 크기가 달라서)
+const WIRE_CHUNK = 12000;
+let WIRE_ID = 0;
+function wireSend(conn, obj) {
+  if (!conn || !conn.open) return false;
+  const s = JSON.stringify(obj);
+  try {
+    if (s.length <= WIRE_CHUNK) conn.send(s);
+    else {
+      const id = (++WIRE_ID).toString(36), n = Math.ceil(s.length / WIRE_CHUNK);
+      for (let i = 0; i < n; i++) conn.send('\u0001' + id + ':' + i + ':' + n + ':' + s.slice(i * WIRE_CHUNK, (i + 1) * WIRE_CHUNK));
+    }
+    return true;
+  } catch (e) { return false; }
+}
+// 받은 조각 모으기 → 완성된 객체(또는 null). onPart(받은 수, 전체 수) 로 진행률
+function wireRecv(state, d, onPart) {
+  if (typeof d !== 'string') return d && typeof d === 'object' ? d : null;
+  if (d.charCodeAt(0) !== 1) { try { return JSON.parse(d); } catch (e) { return null; } }
+  const a = d.indexOf(':'), b = d.indexOf(':', a + 1), c = d.indexOf(':', b + 1);
+  const id = d.slice(1, a), i = +d.slice(a + 1, b), n = +d.slice(b + 1, c);
+  if (!(n > 0 && n < 20000 && i >= 0 && i < n)) return null;
+  const parts = state[id] || (state[id] = { n, got: 0, p: new Array(n) });
+  if (parts.p[i] === undefined) { parts.p[i] = d.slice(c + 1); parts.got++; }
+  if (onPart && n > 4) onPart(parts.got, n);
+  if (parts.got < n) return null;
+  delete state[id];
+  try { return JSON.parse(parts.p.join('')); } catch (e) { return null; }
+}
 
+const NET_BLOCKED_MSG = '방장 기기와 연결 길을 찾지 못했어요. 학교 와이파이가 기기끼리 연결을 막는 경우가 있어요 → ① 같은 와이파이인지 확인 ② 선생님 노트북에서 「서버실행.bat」(LAN 서버)으로 열기 ③ 휴대폰 핫스팟으로 해 보세요';
 class Net {
   constructor(g) {
     this.g = g; this.mode = null; this.isHost = false; this.connected = false;
@@ -15,6 +54,22 @@ class Net {
     this.out = new Map(); this.myId = 'host';
     this.stateT = 0; this.entT = 0; this.serverInfo = null; this.serverChecked = false;
     this.avs = new Map(); // 다른 플레이어 아바타 (참가자 쪽)
+    this.lastHost = 0;    // 참가자: 방장에게서 마지막으로 받은 때
+    // 화면이 숨겨져(다른 탭) 그리기가 멈춰도 연결 확인은 계속 (끊긴 친구가 유령처럼 남지 않게)
+    setInterval(() => this.heartbeat(), 3000);
+  }
+  heartbeat() {
+    if (!this.connected) return;
+    const now = performance.now();
+    if (this.isHost) {
+      for (const [id, p] of this.peers) {
+        if (p.last && now - p.last > 75000) { this.g.ui.chatLine(`📡 ${p.name || '친구'}님과 연결이 끊긴 것 같아 내보냈어요`, '#ffb37a'); if (p.conn) try { p.conn.close(); } catch (e) { } this.onPeerLeave(id); }
+      }
+      this.broadcast({ t: 'hb' }); this.flush();
+    } else {
+      if (this.lastHost && now - this.lastHost > 60000) { this.lost('방장과 1분 동안 연락이 없어 연결을 끊었어요. 방장의 화면이 꺼져 있지 않은지 확인해 주세요.'); return; }
+      this.send({ t: 'hb' }); this.flush();
+    }
   }
   peerCount() { return this.peers.size; }
   // ---------------- LAN 서버 확인 ----------------
@@ -49,13 +104,18 @@ class Net {
     }).catch(() => cb([]));
   }
   stopListing() { clearInterval(this.listTimer); if (this.listWs) { try { this.listWs.close(); } catch (e) { } this.listWs = null; } }
-  loadPeerJS() {
-    if (window.Peer) return Promise.resolve();
-    return new Promise((res, rej) => {
-      const s = document.createElement('script'); s.src = PEERJS_URL;
-      s.onload = () => res(); s.onerror = () => rej(new Error('PeerJS를 불러오지 못했어요 (인터넷 연결 확인)'));
-      document.head.appendChild(s);
-    });
+  async loadPeerJS() {
+    if (window.Peer) return;
+    if (!window.RTCPeerConnection) throw new Error('이 브라우저는 방 코드(P2P) 연결을 지원하지 않아요. 크롬·엣지·웨일 최신 버전이나 LAN 서버(서버실행.bat)를 써 주세요');
+    for (const url of PEERJS_URLS) {
+      const ok = await new Promise((res) => {
+        const s = document.createElement('script'); s.src = url;
+        s.onload = () => res(true); s.onerror = () => { s.remove(); res(false); };
+        document.head.appendChild(s);
+      });
+      if (ok && window.Peer) return;
+    }
+    throw new Error('연결 도구(PeerJS)를 불러오지 못했어요. 인터넷 연결이나 학교 방화벽을 확인하거나 LAN 서버(서버실행.bat)를 써 주세요');
   }
   // ================= 방장 =================
   async host(mode) {
@@ -68,7 +128,7 @@ class Net {
         const ws = await this.openWs();
         this.ws = ws; this.mode = 'lan';
         ws.onmessage = (e) => this.onWs(JSON.parse(e.data));
-        ws.onclose = () => { if (this.isHost) { g.ui.toast('LAN 서버와 연결이 끊겼어요'); this.isHost = false; this.connected = false; this.peers.clear(); g.remotes.clear(); } };
+        ws.onclose = () => { if (this.ws === ws && this.isHost) { g.ui.toast('LAN 서버와 연결이 끊겼어요'); this.isHost = false; this.connected = false; this.peers.clear(); g.remotes.clear(); } };
         ws.send(JSON.stringify({ type: 'host', name: g.worldName, host: g.player.name }));
         this.isHost = true; this.connected = true;
         g.ui.chatLine('📡 LAN 서버에 방을 열었어요! 친구들이 「방에 들어가기」 목록에서 들어올 수 있어요.', '#9f9');
@@ -76,7 +136,7 @@ class Net {
         await this.loadPeerJS();
         const tryOpen = () => new Promise((res, rej) => {
           const code = String(1000 + Math.random() * 9000 | 0);
-          const peer = new Peer(PEER_PREFIX + code, { debug: 0 });
+          const peer = new Peer(PEER_PREFIX + code, PEER_OPTS);
           peer.on('open', () => res({ peer, code }));
           peer.on('error', (err) => { if (err.type === 'unavailable-id') { peer.destroy(); res(null); } else rej(err); });
         });
@@ -85,15 +145,17 @@ class Net {
         this.peer = r.peer; this.roomCode = r.code; this.mode = 'peer';
         this.isHost = true; this.connected = true;
         this.peer.on('connection', (conn) => {
-          const id = 'p' + Math.random().toString(36).slice(2, 8);
+          const id = 'p' + Math.random().toString(36).slice(2, 8), parts = {};
           conn.on('open', () => {
-            this.peers.set(id, { name: '?', send: (o) => { try { conn.send(o); } catch (e) { } }, conn });
+            this.peers.set(id, { name: '?', send: (o) => wireSend(conn, o), conn, last: performance.now() });
           });
-          conn.on('data', (d) => this.onHostData(id, d));
+          conn.on('data', (d) => { const p = this.peers.get(id); if (p) p.last = performance.now(); const m = wireRecv(parts, d); if (m) this.onHostData(id, m); });
           conn.on('close', () => this.onPeerLeave(id));
           conn.on('error', () => this.onPeerLeave(id));
         });
-        this.peer.on('disconnected', () => { try { this.peer.reconnect(); } catch (e) { } });
+        // 신호 서버와 끊기면(와이파이 잠깐 끊김 등) 다시 붙음 — 이미 연결된 친구는 그대로
+        this.peer.on('disconnected', () => { setTimeout(() => { try { if (this.peer && !this.peer.destroyed) this.peer.reconnect(); } catch (e) { } }, 1000); });
+        this.peer.on('error', (err) => { if (err && (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error')) g.ui.toast('📡 방 코드 서버와 연결이 불안정해요. 새 친구가 못 들어올 수 있어요 (이미 들어온 친구는 괜찮아요)', 4000); });
         g.ui.chatLine(`📡 방이 열렸어요! 방 코드: ${this.roomCode}`, '#9f9');
         g.ui.toast(`방 코드: ${this.roomCode}`, 6000);
       }
@@ -107,12 +169,12 @@ class Net {
     const g = this.g;
     if (this.isHost) {
       if (m.type === 'hosted') { this.roomId = m.room; }
-      else if (m.type === 'peer-join') { const id = m.id; this.peers.set(id, { name: m.name || '?', send: null }); }
+      else if (m.type === 'peer-join') { const id = m.id; this.peers.set(id, { name: m.name || '?', send: null, last: performance.now() }); }
       else if (m.type === 'peer-leave') this.onPeerLeave(m.id);
-      else if (m.type === 'msg') this.onHostData(m.from, m.data);
+      else if (m.type === 'msg') { const p = this.peers.get(m.from); if (p) p.last = performance.now(); this.onHostData(m.from, m.data); }
     } else {
-      if (m.type === 'joined') { this.myId = m.id; this.sendRaw({ t: 'hello', name: g.settings.name, skin: g.settings.skin, av: avatarNet(g.avatar) }); }
-      else if (m.type === 'msg') this.onClientData(m.data);
+      if (m.type === 'joined') { this.myId = m.id; this.sendRaw(this.helloMsg()); g.ui.showLoading('방장에게 세계를 받는 중...'); }
+      else if (m.type === 'msg') { this.lastHost = performance.now(); this.onClientData(m.data); }
       else if (m.type === 'closed' || m.type === 'error') this.lost(m.type === 'error' ? (m.message || '방에 들어갈 수 없어요') : '방장이 방을 닫았어요');
     }
   }
@@ -132,13 +194,21 @@ class Net {
     if (!w) return;
     const m = data;
     switch (m.t) {
+      case 'hb': return;
       case 'hello': {
         const p = this.peers.get(id); if (p) p.name = m.name;
+        if ((m.proto | 0) !== NET_PROTO) {
+          const theirs = m.v || '옛 버전';
+          this.sendTo(id, { t: 'refuse', why: `방장은 에듀 크래프트 ${VERSION}, 나는 ${theirs}이에요. Ctrl + F5(휴대폰은 당겨서 새로고침)로 새 버전을 받은 뒤 다시 들어와 주세요.`, v: VERSION });
+          g.ui.chatLine(`⚠ ${String(m.name || '친구').slice(0, 16)}님은 다른 버전(${theirs})이라 들어오지 못했어요. 그 친구 화면에서 Ctrl + F5 로 새로고침하게 해 주세요.`, '#ffb37a');
+          this.flush();
+          return;
+        }
         const r = { id, name: String(m.name || '친구').slice(0, 16), skin: SKINS[(m.skin | 0) % SKINS.length], av: sanitizeAvatar(m.av), x: g.player.spawn[0], y: g.player.spawn[1], z: g.player.spawn[2], yaw: 0, pitch: 0, walkAnim: 0, speed: 0, bot: null, vx: 0, vy: 0, vz: 0, h: 1.8 };
         g.remotes.set(id, r);
         const mods = {};
         for (const [k, mm] of w.mods) { const a = []; for (const [i, v] of mm) a.push(i, v); mods[k] = a; }
-        this.sendTo(id, { t: 'welcome', id, seed: w.seed, type: w.type, mode: g.worldMode, time: w.time, rain: g.rainTarget, rules: g.worldRules, mods, be: Array.from(w.be.entries()), spawn: g.player.spawn, worldName: g.worldName });
+        this.sendTo(id, { t: 'welcome', proto: NET_PROTO, v: VERSION, id, seed: w.seed, type: w.type, mode: g.worldMode, time: w.time, rain: g.rainTarget, rules: g.worldRules, mods, be: Array.from(w.be.entries()), spawn: g.player.spawn, worldName: g.worldName });
         // 아바타 주고받기: 새 친구에게 모두의 아바타, 모두에게 새 친구의 아바타
         this.sendTo(id, { t: 'av', id: 'host', name: g.player.name, av: avatarNet(g.avatar) });
         for (const [rid, rr] of g.remotes) if (rid !== id && rr.av) this.sendTo(id, { t: 'av', id: rid, name: rr.name, av: avatarNet(rr.av) });
@@ -208,30 +278,43 @@ class Net {
       const ws = await this.openWs();
       this.ws = ws; this.mode = 'lan'; this.isHost = false;
       ws.onmessage = (e) => this.onWs(JSON.parse(e.data));
-      ws.onclose = () => this.lost('연결이 끊겼어요');
+      ws.onclose = () => { if (this.ws === ws) this.lost('LAN 서버와 연결이 끊겼어요'); };
       ws.send(JSON.stringify({ type: 'join', room: roomId, name: g.settings.name }));
       this.stopListing();
       g.ui.showLoading('방에 들어가는 중...');
-      this.joinTimer = setTimeout(() => { if (!this.connected) this.lost('방장이 응답하지 않아요'); }, 20000);
+      this.joinTimer = setTimeout(() => { if (!this.connected) this.lost('방장이 응답하지 않아요. 방장 화면이 켜져 있는지 확인해 주세요'); }, 30000);
     } catch (e) { g.ui.toast(e.message); }
   }
+  helloMsg() { const g = this.g; return { t: 'hello', proto: NET_PROTO, v: VERSION, name: g.settings.name, skin: g.settings.skin, av: avatarNet(g.avatar) }; }
   async joinPeer(code) {
     const g = this.g;
-    g.ui.showLoading('방에 연결하는 중...');
+    code = String(code).replace(/[^0-9a-zA-Z]/g, '');
+    if (!code) return;
+    g.ui.showLoading('① 방 코드 서버에 연결하는 중...');
     try {
       await this.loadPeerJS();
-      const peer = new Peer({ debug: 0 });
+      const peer = new Peer(PEER_OPTS);
       this.peer = peer; this.mode = 'peer'; this.isHost = false;
+      const parts = {};
+      let stage = 1;
       peer.on('open', () => {
-        const conn = peer.connect(PEER_PREFIX + code.trim(), { reliable: true });
+        stage = 2; g.ui.showLoading('② 방장 기기를 찾는 중...');
+        const conn = peer.connect(PEER_PREFIX + code, { reliable: true, serialization: 'raw' });
         this.conn = conn;
-        conn.on('open', () => { this.sendRaw({ t: 'hello', name: g.settings.name, skin: g.settings.skin, av: avatarNet(g.avatar) }); });
-        conn.on('data', (d) => this.onClientData(d));
-        conn.on('close', () => this.lost('방장과 연결이 끊겼어요'));
-        conn.on('error', () => this.lost('연결 오류'));
+        conn.on('open', () => { stage = 3; g.ui.showLoading('③ 방장에게 세계를 받는 중...'); this.sendRaw(this.helloMsg()); });
+        conn.on('data', (d) => {
+          this.lastHost = performance.now();
+          const m = wireRecv(parts, d, (got, n) => { if (!this.connected) g.ui.setLoading(Math.round(got / n * 100)); });
+          if (m) this.onClientData(m);
+        });
+        conn.on('close', () => { if (this.peer === peer) this.lost('방장과 연결이 끊겼어요'); });
+        conn.on('error', () => { if (this.peer === peer) this.lost('연결 오류가 났어요'); });
+        // 기기끼리 길을 못 찾으면(학교 와이파이 차단 등) 알려 줌
+        const pc = conn.peerConnection;
+        if (pc) pc.addEventListener('iceconnectionstatechange', () => { if (pc.iceConnectionState === 'failed' && !this.connected && this.peer === peer) this.lost(NET_BLOCKED_MSG); });
       });
-      peer.on('error', (err) => { this.lost(err.type === 'peer-unavailable' ? '그런 방 코드가 없어요' : '연결 오류: ' + err.type); });
-      this.joinTimer = setTimeout(() => { if (!this.connected) this.lost('방에 연결하지 못했어요 (코드를 확인하세요)'); }, 20000);
+      peer.on('error', (err) => { if (this.peer !== peer) return; this.lost(err.type === 'peer-unavailable' ? `「${code}」 방이 없어요. 코드를 다시 확인하거나, 방장이 방을 다시 열어 달라고 해 주세요` : err.type === 'browser-incompatible' ? '이 브라우저는 방 코드 연결을 지원하지 않아요' : err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error' ? '방 코드 서버에 연결할 수 없어요 (인터넷·학교 방화벽 확인). LAN 서버(서버실행.bat)를 써 보세요' : '연결 오류: ' + err.type); });
+      this.joinTimer = setTimeout(() => { if (!this.connected && this.peer === peer) this.lost(stage === 1 ? '방 코드 서버에 연결하지 못했어요 (인터넷 확인)' : stage === 2 ? NET_BLOCKED_MSG : '세계를 받는 중에 멈췄어요. 다시 들어와 보세요'); }, 35000);
     } catch (e) { this.lost(e.message); }
   }
   lost(msg) {
@@ -246,7 +329,18 @@ class Net {
   onClientData(data) {
     if (data && data.t === 'batch') { for (const m of data.m) this.onClientData(m); return; }
     const g = this.g, m = data;
+    if (!m || !m.t) return;
+    if (m.t === 'hb') return;
+    if (m.t === 'refuse') {
+      this.lost('⚠ 버전이 달라요: ' + m.why);
+      // 내 쪽이 옛 버전이면 바로 새로 받기
+      const num = (v) => String(v || '').replace(/[^0-9.]/g, '').split('.').map(Number);
+      const a = num(m.v), b = num(VERSION), newer = (a[0] - b[0]) || ((a[1] || 0) - (b[1] || 0));
+      if (newer > 0 && confirm(`방장은 새 버전(${m.v})이에요. 지금 새 버전을 받을까요? (새로고침)`)) { try { sessionStorage.removeItem('educraft.freshReload'); } catch (e) { } reloadFresh('방장과 버전 맞추기'); }
+      return;
+    }
     if (m.t === 'welcome') {
+      if ((m.proto | 0) !== NET_PROTO) { this.lost(`⚠ 방장(${m.v || '옛 버전'})과 버전이 달라요. 두 기기 모두 Ctrl + F5 로 새로고침해 주세요`); return; }
       clearTimeout(this.joinTimer);
       this.connected = true; this.myId = m.id;
       g.startWorld({ id: null, name: m.worldName, client: m });
@@ -299,12 +393,13 @@ class Net {
       case 'push': { const p = g.player; p.x += m.d[0]; p.y += m.d[1]; p.z += m.d[2]; return; }
       case 'launch': g.player.vy = 17; g.player.fallDist = 0; return;
       case 'drops': for (const it of m.items) g.dropItem(m.p[0], m.p[1], m.p[2], it); return;
+      case 'xp': if (g.player.addXP && !g.player.creative) g.player.addXP(m.n | 0); return;
     }
   }
   // ================= 보내기 =================
   sendRaw(obj) {
     if (this.mode === 'lan' && this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify({ type: 'msg', to: 'host', data: obj }));
-    else if (this.mode === 'peer' && this.conn && this.conn.open) this.conn.send(obj);
+    else if (this.mode === 'peer' && this.conn && this.conn.open) wireSend(this.conn, obj);
   }
   send(obj) { if (!this.isHost && this.connected) this.queue('host', obj); }
   sendTo(id, obj) { if (this.isHost) this.queue(id, obj); }
@@ -376,11 +471,11 @@ class Net {
     }
   }
   cleanup() {
-    this.stopListing();
+    this.stopListing(); clearTimeout(this.joinTimer);
     try { if (this.ws) this.ws.close(); } catch (e) { }
     try { if (this.conn) this.conn.close(); } catch (e) { }
     try { if (this.peer) this.peer.destroy(); } catch (e) { }
-    this.ws = null; this.conn = null; this.peer = null;
+    this.ws = null; this.conn = null; this.peer = null; this.lastHost = 0;
     this.isHost = false; this.connected = false; this.mode = null; this.peers.clear(); this.out.clear(); this.avs.clear();
     if (this.g.remotes) this.g.remotes.clear();
   }

@@ -259,7 +259,7 @@ const Survival = {
     const now = performance.now(), w = g.world;
     for (let i = q.length - 1, done = 0; i >= 0 && done < 40; i--) {
       const e = q[i]; if (e[3] > now) continue;
-      q.splice(i, 1); done++;
+      q[i] = q[q.length - 1]; q.pop(); done++;   // (최적화) splice 대신 맨 끝과 바꿔 지우기
       const [x, y, z] = e, lid = w.getBlock(x, y, z);
       if (!this.isLeaf(lid) || (w.getMeta(x, y, z) & 1) || w.logNear(x, y, z, 4)) continue;
       w.setBlock(x, y, z, 0, 0);

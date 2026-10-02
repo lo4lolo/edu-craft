@@ -30,6 +30,11 @@ const CODE_KEYS = {
   repeat: [['#coal'], '석탄(또는 숯)'], for: [['iron_ingot'], '철 주괴'], wait: [['bread'], '빵'],
   set: [['book'], '책'], change: [['book'], '책'], goto: [['bed'], '침대'],
   rsLine: [['redstone'], '레드스톤 가루'], rsPlace: [['redstone_torch'], '레드스톤 횃불'], rsEx: [['repeater'], '레드스톤 중계기'],
+  face: [['compass', '#planks'], '판자'], circle: [['clay_ball', 'cobblestone'], '조약돌'], line: [['string', 'stick'], '막대기'],
+  copy: [['paper', 'chest'], '상자'], paste: [['paper', 'chest'], '상자'],
+  if: [['#coal', 'lever'], '석탄(또는 레버)'], ifelse: [['lever', 'iron_ingot'], '철 주괴(또는 레버)'], until: [['redstone_torch', 'iron_ingot'], '철 주괴'],
+  forever: [['clock', 'redstone'], '레드스톤 가루'], stop: [['#coal', 'lever'], '석탄(또는 레버)'],
+  func: [['book', 'bookshelf'], '책'], call: [['book', 'bookshelf'], '책'], rand: [['flint', 'gravel'], '자갈'],
 };
 const _codeKeyIds = {};
 function codeKeyIds(t) {
@@ -57,6 +62,9 @@ const BOT_DECOR = () => new Set([BL.glass, BL.torch, BL.oak_door, BL.oak_log, BL
 const DIR_CHOICES = [['f', '앞'], ['b', '뒤'], ['l', '왼쪽'], ['r', '오른쪽'], ['u', '위'], ['d', '아래']];
 const HDIR_CHOICES = [['f', '앞'], ['b', '뒤'], ['l', '왼쪽'], ['r', '오른쪽']];
 const FILL_CHOICES = [['hollow', '속 빈'], ['solid', '꽉 찬']];
+const FACE_CHOICES = [['n', '북쪽'], ['e', '동쪽'], ['s', '남쪽'], ['w', '서쪽']];
+const COND_CHOICES = [['ahead', '앞에 블록이 있음'], ['aheadAir', '앞이 비어 있음'], ['below', '아래에 블록이 있음'], ['belowAir', '아래가 비어 있음'], ['above', '위에 블록이 있음'], ['here', '지금 자리에 블록이 있음'],
+  ['water', '아래가 물'], ['coin', '동전 앞면 (반반 확률)'], ['day', '낮'], ['night', '밤'], ['near', '내가 5칸 안에 있음'], ['expr', '식이 참 ✎']];
 const RS_PARTS = [['lever', '레버'], ['stone_button', '버튼'], ['redstone_torch', '레드스톤 횃불'], ['redstone_wire', '전선'], ['repeater', '중계기'], ['comparator', '비교기'], ['redstone_lamp', '램프'], ['color_lamp', '색깔 램프'], ['number_display', '숫자 표시기'], ['piston', '피스톤'], ['sticky_piston', '끈끈이 피스톤'], ['observer', '관측기'], ['note_block', '소리 블록'], ['gate_and', 'AND 게이트'], ['gate_or', 'OR 게이트'], ['gate_xor', 'XOR 게이트'], ['gate_not', 'NOT 게이트'], ['clock_block', '클럭 블록'], ['redstone_block', '레드스톤 블록'], ['tnt', 'TNT'], ['iron_door', '철 문'], ['stone_pressure_plate', '압력판'], ['player_sensor', '플레이어 감지기'], ['daylight_sensor', '햇빛 감지기'], ['fan', '선풍기'], ['dispenser', '발사기']];
 const RS_EXAMPLES = [['lamp', '기본 램프 회로'], ['strength', '신호 세기 실험'], ['gates', '논리 게이트 체험장'], ['door', '자동문'], ['clock', '깜빡이(클럭)'], ['piston', '피스톤 기본'], ['street', '밤에 켜지는 가로등'], ['repeater', '중계기로 멀리 보내기']];
 
@@ -73,6 +81,8 @@ const CODE_DEFS = {
   turnB: { cat: 'move', text: '⟲ 뒤로 돌기', a: {} },
   home: { cat: 'move', text: '처음 자리로 돌아가기', a: {} },
   goto: { cat: 'move', text: '시작점 기준 오른쪽 #x 위 #y 앞 #z 으로 이동', a: { x: '0', y: '0', z: '0' } },
+  face: { cat: 'move', text: '#d 바라보기', a: { d: 'n' } },
+  come: { cat: 'move', text: '빌더봇을 내 앞으로 부르기', a: {} },
   setblk: { cat: 'build', text: '블록 고르기 #b', a: { b: 'stone_bricks' } },
   setcolor: { cat: 'build', text: '#k 색 번호 #n 고르기', a: { k: 'wool', n: 'i' } },
   place: { cat: 'build', text: '지금 자리에 블록 놓기', a: {} },
@@ -89,17 +99,44 @@ const CODE_DEFS = {
   tower: { cat: 'shape', text: '탑 짓기 · 반지름 #r 높이 #h', a: { r: '3', h: '12' } },
   stair: { cat: 'shape', text: '계단 · #n 칸 폭 #w', a: { n: '5', w: '3' } },
   clear: { cat: 'shape', text: '공간 비우기 · 앞 #d 오른쪽 #w 높이 #h', a: { d: '5', w: '5', h: '5' } },
+  circle: { cat: 'shape', text: '원 · 반지름 #r #fill', a: { r: '5', fill: 'hollow' } },
+  line: { cat: 'shape', text: '선 긋기 · 오른쪽 #x 위 #y 앞 #z 까지', a: { x: '0', y: '5', z: '8' } },
+  copy: { cat: 'shape', text: '복사하기 · 앞 #d 오른쪽 #w 높이 #h', a: { d: '5', w: '5', h: '5' } },
+  paste: { cat: 'shape', text: '복사한 것 붙여넣기', a: {} },
   repeat: { cat: 'ctrl', text: '#n 번 반복하기', a: { n: '4' }, c: true },
   for: { cat: 'ctrl', text: '#v 를 #a 부터 #b 까지 바꾸며 반복', a: { v: 'i', a: '1', b: '5' }, c: true },
+  if: { cat: 'ctrl', text: '만약 #c 이면', a: { c: 'ahead', e: 'x > 3' }, c: true },
+  ifelse: { cat: 'ctrl', text: '만약 #c 이면', a: { c: 'below', e: 'x > 3' }, c: true, c2: '아니면' },
+  until: { cat: 'ctrl', text: '#c 이(가) 될 때까지 반복', a: { c: 'belowAir', e: 'x > 10' }, c: true },
+  forever: { cat: 'ctrl', text: '계속 반복하기 (■ 멈춤까지)', a: {}, c: true },
   wait: { cat: 'ctrl', text: '#s 초 기다리기', a: { s: '1' } },
+  stop: { cat: 'ctrl', text: '코드 멈추기', a: {} },
+  func: { cat: 'func', text: '함수 #f 만들기', a: { f: '기둥' }, c: true },
+  call: { cat: 'func', text: '함수 #f 실행하기', a: { f: '기둥' } },
   set: { cat: 'var', text: '#v 를 #x 로 정하기', a: { v: 'x', x: '0' } },
   change: { cat: 'var', text: '#v 를 #x 만큼 바꾸기', a: { v: 'x', x: '1' } },
+  rand: { cat: 'var', text: '#v 를 #a ~ #b 사이 무작위 수로 정하기', a: { v: 'x', a: '1', b: '6' } },
   say: { cat: 'var', text: '말하기 #s', a: { s: '안녕!' } },
   rsLine: { cat: 'rs', text: '전선 #n 칸 깔며 앞으로', a: { n: '5' } },
   rsPlace: { cat: 'rs', text: '#p 놓기 · 방향 #d', a: { p: 'lever', d: 'f' } },
   rsEx: { cat: 'rs', text: '회로 예제 짓기 #e', a: { e: 'lamp' } },
 };
-const CAT_NAMES = { move: '이동', build: '건축', shape: '도형', ctrl: '반복·제어', var: '변수·말하기', rs: '⚡ 레드스톤 회로' };
+const CAT_NAMES = { move: '이동', build: '건축', shape: '도형', ctrl: '반복·조건', func: '함수 (나만의 블록)', var: '변수·말하기', rs: '⚡ 레드스톤 회로' };
+// 코딩 도전 과제: 실행을 끝까지 마치면 확인 (st: used 쓴 블록, placed 놓은 칸, colors 색 수, calls 함수 부른 횟수, previewed)
+const CODE_MISSIONS = [
+  ['first', '첫 건축', '블록을 10칸 이상 지어요', st => st.placed >= 10],
+  ['repeat', '반복의 힘', '「반복하기」로 50칸 이상 지어요', st => st.used.has('repeat') && st.placed >= 50],
+  ['for', '변수 탐험가', '「i를 바꾸며 반복」 블록을 써요', st => st.used.has('for')],
+  ['if', '갈림길', '「만약 ~이면」 블록을 써요', st => st.used.has('if') || st.used.has('ifelse')],
+  ['until', '탐지기', '「~이(가) 될 때까지 반복」을 써요', st => st.used.has('until')],
+  ['func', '나만의 블록', '함수를 만들어 2번 이상 불러요', st => st.calls >= 2],
+  ['rainbow', '무지개 화가', '서로 다른 색 블록을 5가지 이상 써요', st => st.colors >= 5],
+  ['rand', '무작위 예술', '「무작위 수」 블록이나 random()을 써요', st => st.used.has('rand') || st.randExpr],
+  ['stamp', '도장 찍기', '복사하기와 붙여넣기를 함께 써요', st => st.used.has('copy') && st.used.has('paste')],
+  ['plan', '설계도', '👁 미리보기로 확인한 뒤 그대로 지어요', st => st.previewed],
+  ['big', '큰 건축가', '한 번에 500칸 이상 지어요', st => st.placed >= 500],
+  ['rs', '전기 기술자', '레드스톤 회로 블록을 써요', st => st.used.has('rsLine') || st.used.has('rsPlace') || st.used.has('rsEx')],
+];
 const SAMPLE_PROGRAMS = {
   '작은 집': [{ t: 'setblk', a: { b: 'oak_planks' } }, { t: 'house', a: { d: '7', w: '7', h: '4' } }],
   '피라미드': [{ t: 'setblk', a: { b: 'sandstone' } }, { t: 'pyramid', a: { s: '11' } }],
@@ -108,6 +145,11 @@ const SAMPLE_PROGRAMS = {
   '무지개 다리': [{ t: 'for', a: { v: 'i', a: '0', b: '6' }, c: [{ t: 'setcolor', a: { k: 'wool', n: '[14,1,4,5,3,11,10][i]' } }, { t: 'floor', a: { d: '12', w: '1' } }, { t: 'right', a: { n: '1' } }] }],
   '성벽': [{ t: 'setblk', a: { b: 'cobblestone' } }, { t: 'repeat', a: { n: '4' }, c: [{ t: 'wall', a: { w: '10', h: '4' } }, { t: 'fwd', a: { n: '9' } }, { t: 'turnR', a: {} }] }],
   '색깔 기둥 숲': [{ t: 'for', a: { v: 'i', a: '0', b: '15' }, c: [{ t: 'setcolor', a: { k: 'concrete', n: 'i' } }, { t: 'repeat', a: { n: 'i/2+2' }, c: [{ t: 'place', a: {} }, { t: 'up', a: { n: '1' } }] }, { t: 'down', a: { n: 'i/2+2' } }, { t: 'fwd', a: { n: '2' } }] }],
+  '🔀 체크무늬 바닥 (만약/아니면)': [{ t: 'for', a: { v: 'i', a: '0', b: '7' }, c: [{ t: 'for', a: { v: 'j', a: '0', b: '7' }, c: [{ t: 'ifelse', a: { c: 'expr', e: '(i + j) % 2 == 0' }, c: [{ t: 'setcolor', a: { k: 'concrete', n: '15' } }], c2: [{ t: 'setcolor', a: { k: 'concrete', n: '0' } }] }, { t: 'goto', a: { x: 'j', y: '-1', z: 'i' } }, { t: 'place', a: {} }] }] }],
+  '🌉 다리와 기둥 (될 때까지 반복)': [{ t: 'setblk', a: { b: 'stone_bricks' } }, { t: 'up', a: { n: '4' } }, { t: 'repeat', a: { n: '10' }, c: [{ t: 'place', a: {} }, { t: 'set', a: { v: 'd', x: '0' } }, { t: 'until', a: { c: 'below' }, c: [{ t: 'down', a: { n: '1' } }, { t: 'place', a: {} }, { t: 'change', a: { v: 'd', x: '1' } }] }, { t: 'up', a: { n: 'd' } }, { t: 'fwd', a: { n: '1' } }] }],
+  '🧩 함수로 기둥 숲': [{ t: 'func', a: { f: '기둥' }, c: [{ t: 'repeat', a: { n: '5' }, c: [{ t: 'place', a: {} }, { t: 'up', a: { n: '1' } }] }, { t: 'down', a: { n: '5' } }] }, { t: 'setblk', a: { b: 'oak_log' } }, { t: 'repeat', a: { n: '3' }, c: [{ t: 'repeat', a: { n: '3' }, c: [{ t: 'call', a: { f: '기둥' } }, { t: 'fwd', a: { n: '3' } }] }, { t: 'back', a: { n: '9' } }, { t: 'right', a: { n: '3' } }] }],
+  '🎲 무작위 색 탑': [{ t: 'repeat', a: { n: '16' }, c: [{ t: 'rand', a: { v: 'x', a: '0', b: '15' } }, { t: 'setcolor', a: { k: 'wool', n: 'x' } }, { t: 'place', a: {} }, { t: 'up', a: { n: '1' } }] }],
+  '⭕ 원으로 만든 탑': [{ t: 'setblk', a: { b: 'stone_bricks' } }, { t: 'for', a: { v: 'i', a: '0', b: '9' }, c: [{ t: 'circle', a: { r: '6 - i / 2', fill: 'hollow' } }, { t: 'up', a: { n: '1' } }] }],
   '⚡ 논리 게이트 체험장': [{ t: 'rsEx', a: { e: 'gates' } }],
   '⚡ 신호 세기 실험': [{ t: 'rsEx', a: { e: 'strength' } }],
   '⚡ 자동문': [{ t: 'rsEx', a: { e: 'door' } }],
@@ -135,7 +177,7 @@ class Builder {
   }
   lockedIn(list, out) {
     out = out || new Set();
-    for (const n of list || []) { if (CODE_DEFS[n.t] && !this.isOpen(n.t)) out.add(n.t); if (n.c) this.lockedIn(n.c, out); }
+    for (const n of list || []) { if (CODE_DEFS[n.t] && !this.isOpen(n.t)) out.add(n.t); if (n.c) this.lockedIn(n.c, out); if (n.c2) this.lockedIn(n.c2, out); }
     return out;
   }
   // 가방을 살펴 처음 얻은 재료를 기록하고, 새로 열린 코딩 블록을 알려 줌 (0.5초마다)
@@ -175,16 +217,20 @@ class Builder {
           <button class="btn small" id="cd-save">저장</button>
           <button class="btn small" id="cd-new">새로</button>
           <button class="btn small" id="cd-io">내보내기/가져오기</button>
+          <button class="btn small" id="cd-mis">🏅 코딩 도전 <b id="cd-misn"></b></button>
           <span style="flex:1"></span>
           <button class="btn small" id="cd-close">✕ 닫기</button>
         </div>
         <div class="code-body">
           <div class="code-palette" id="cd-pal"></div>
           <div class="code-ws" id="cd-ws"></div>
+          <div class="code-missions" id="cd-missions"></div>
         </div>
         <div class="code-bottom">
           <button class="btn primary" id="cd-run">▶ 실행</button>
           <button class="btn red" id="cd-stop">■ 멈춤</button>
+          <button class="btn blue" id="cd-prev" title="짓기 전에 어디에 무엇이 생길지 테두리로 보여 줘요">👁 미리보기</button>
+          <button class="btn" id="cd-step" title="한 블록씩 멈추며 실행해요">👣 한 단계씩</button>
           <button class="btn" id="cd-undo">↶ 되돌리기</button>
           <div class="speed">속도 <input type="range" id="cd-speed" min="1" max="200" value="${this.speed}"><span id="cd-sv">${this.speed}</span></div>
           <div class="code-log" id="cd-log">블록을 끌어다 오른쪽에 쌓아 보세요. 톡 누르면 맨 아래에 붙어요.</div>
@@ -197,7 +243,7 @@ class Builder {
     const fillSaved = () => { saved.innerHTML = '<option value="">💾 내 코드</option>'; const sp = this.savedPrograms(); for (const k in sp) { const o = document.createElement('option'); o.value = k; o.textContent = k; saved.appendChild(o); } };
     fillSaved();
     saved.onchange = () => { const sp = this.savedPrograms(); if (sp[saved.value]) { this.program = sp[saved.value]; this.renderWs(); this.log(`「${saved.value}」 불러옴`); } saved.value = ''; };
-    $('#cd-save', s).onclick = () => { const n = prompt('코드 이름', '나의 건물'); if (!n) return; const sp = this.savedPrograms(); sp[n] = this.program; localStorage.setItem('educraft.programs', JSON.stringify(sp)); fillSaved(); this.log(`「${n}」 저장 완료`); };
+    $('#cd-save', s).onclick = () => { const n = prompt('코드 이름', '나의 건물'); if (!n) return; const sp = this.savedPrograms(); sp[n] = this.program; try { localStorage.setItem('educraft.programs', JSON.stringify(sp)); } catch (e) { this.log('⚠ 이 창에서는 코드를 저장할 수 없어요 (내보내기/가져오기로 옮겨 주세요)'); return; } fillSaved(); this.log(`「${n}」 저장 완료`); };
     $('#cd-new', s).onclick = () => { if (confirm('작업판을 비울까요?')) { this.program = []; this.renderWs(); } };
     $('#cd-io', s).onclick = () => {
       const txt = prompt('아래 글자를 복사해 친구에게 주거나, 받은 코드를 붙여넣고 확인을 누르세요.', JSON.stringify(this.program));
@@ -205,6 +251,10 @@ class Builder {
     };
     $('#cd-close', s).onclick = () => g.ui.closeModal();
     $('#cd-run', s).onclick = () => { this.run(); };
+    $('#cd-prev', s).onclick = () => { this.preview(); };
+    $('#cd-step', s).onclick = () => { this.run({ step: true }); };
+    $('#cd-mis', s).onclick = () => { const m = $('#cd-missions', s); m.classList.toggle('show'); this.renderMissions(); };
+    this.renderMissions();
     $('#cd-stop', s).onclick = () => { this.stop(); };
     $('#cd-undo', s).onclick = () => { this.doUndo(); };
     $('#cd-speed', s).oninput = (e) => { this.speed = +e.target.value; $('#cd-sv', s).textContent = this.speed; };
@@ -222,7 +272,9 @@ class Builder {
       'setblk.b': 'blocks', 'placeDir.d': DIR_CHOICES, 'rsPlace.d': HDIR_CHOICES.concat([['u', '위'], ['d', '아래']]),
       'box.fill': FILL_CHOICES, 'sphere.fill': FILL_CHOICES, 'cyl.fill': FILL_CHOICES, 'pen.on': [['1', '켜기'], ['0', '끄기']],
       'setcolor.k': [['wool', '양털'], ['concrete', '콘크리트']], 'rsPlace.p': RS_PARTS, 'rsEx.e': RS_EXAMPLES,
+      'face.d': FACE_CHOICES, 'circle.fill': FILL_CHOICES,
     };
+    if (key === 'c') return this.condInput(node, def);
     const choices = E[node.t + '.' + key] || null;
     if (choices === 'blocks') {
       el = document.createElement('select');
@@ -243,6 +295,27 @@ class Builder {
     el.onchange = el.oninput = () => { node.a[key] = el.value; this.saveProgram(); };
     return el;
   }
+  // 조건 고르기 + (식이 참일 때) 식 입력칸
+  condInput(node, def) {
+    const wrap = document.createElement('span'); wrap.className = 'cond';
+    const sel = document.createElement('select');
+    for (const [n, kk] of COND_CHOICES) { const o = document.createElement('option'); o.value = n; o.textContent = kk; sel.appendChild(o); }
+    sel.value = node.a.c || def.a.c;
+    const inp = document.createElement('input'); inp.type = 'text'; inp.value = node.a.e !== undefined ? node.a.e : (def.a.e || 'x > 3'); inp.placeholder = '예: i % 2 == 0';
+    const fit = () => { inp.style.width = Math.max(60, Math.min(220, String(inp.value).length * 9 + 18)) + 'px'; inp.style.display = sel.value === 'expr' ? '' : 'none'; };
+    fit();
+    for (const el of [sel, inp]) { el.addEventListener('pointerdown', e => e.stopPropagation()); el.addEventListener('keydown', e => e.stopPropagation()); }
+    sel.onchange = () => { node.a.c = sel.value; fit(); this.saveProgram(); };
+    inp.oninput = inp.onchange = () => { node.a.e = inp.value; fit(); this.saveProgram(); };
+    wrap.appendChild(sel); wrap.appendChild(inp);
+    return wrap;
+  }
+  findParent(node, list) {
+    list = list || this.program;
+    const i = list.indexOf(node); if (i >= 0) return [list, i];
+    for (const n of list) { const r = (n.c && this.findParent(node, n.c)) || (n.c2 && this.findParent(node, n.c2)); if (r) return r; }
+    return null;
+  }
   blockEl(node, inPalette) {
     const def = CODE_DEFS[node.t];
     if (!def) { const d = document.createElement('div'); d.textContent = '?'; return d; }
@@ -259,6 +332,10 @@ class Builder {
     }
     if (locked) { const w = document.createElement('span'); w.className = 'lockwhy'; w.textContent = `🔒 ${CODE_KEYS[node.t][1]}을(를) 얻으면 열려요`; head.appendChild(w); }
     if (!inPalette) {
+      const dup = document.createElement('span'); dup.className = 'del dup'; dup.textContent = '⧉'; dup.title = '복제';
+      dup.addEventListener('pointerdown', e => { e.stopPropagation(); });
+      dup.onclick = (e) => { e.stopPropagation(); const r = this.findParent(node); if (r) { r[0].splice(r[1] + 1, 0, JSON.parse(JSON.stringify(node))); this.renderWs(); } };
+      head.appendChild(dup);
       const del = document.createElement('span'); del.className = 'del'; del.textContent = '✕'; del.title = '지우기';
       del.addEventListener('pointerdown', e => { e.stopPropagation(); });
       del.onclick = (e) => { e.stopPropagation(); this.removeNode(node); this.renderWs(); };
@@ -269,6 +346,13 @@ class Builder {
       if (!node.c) node.c = [];
       if (!inPalette) this.renderList(inner, node.c);
       el.appendChild(inner);
+      if (def.c2) {
+        const mid = document.createElement('div'); mid.className = 'mid'; mid.textContent = def.c2; el.appendChild(mid);
+        const inner2 = document.createElement('div'); inner2.className = 'inner';
+        if (!node.c2) node.c2 = [];
+        if (!inPalette) this.renderList(inner2, node.c2);
+        el.appendChild(inner2);
+      }
       const foot = document.createElement('div'); foot.className = 'foot'; el.appendChild(foot);
     }
     el._node = node;
@@ -285,11 +369,15 @@ class Builder {
       pr.innerHTML = `🔓 열린 코딩 블록 <b>${open}</b> / ${all.length} · 재료를 처음 얻으면 하나씩 열려요`;
       pal.appendChild(pr);
     }
+    const nav = document.createElement('div'); nav.className = 'code-nav'; pal.appendChild(nav);
     let cat = null;
     for (const t in CODE_DEFS) {
       const def = CODE_DEFS[t];
-      if (def.cat !== cat) { cat = def.cat; const h = document.createElement('h5'); h.textContent = CAT_NAMES[cat]; pal.appendChild(h); }
-      const node = { t, a: Object.assign({}, def.a) }; if (def.c) node.c = [];
+      if (def.cat !== cat) {
+        cat = def.cat; const h = document.createElement('h5'); h.textContent = CAT_NAMES[cat]; pal.appendChild(h);
+        const b = document.createElement('button'); b.className = 'cn c-' + cat; b.textContent = CAT_NAMES[cat].replace(/\s*\(.*\)/, ''); b.onclick = () => h.scrollIntoView({ block: 'start', behavior: 'smooth' }); nav.appendChild(b);
+      }
+      const node = { t, a: Object.assign({}, def.a) }; if (def.c) node.c = []; if (def.c2) node.c2 = [];
       pal.appendChild(this.blockEl(node, true));
     }
   }
@@ -319,7 +407,7 @@ class Builder {
     list = list || this.program;
     const i = list.indexOf(node);
     if (i >= 0) { list.splice(i, 1); return true; }
-    for (const n of list) if (n.c && this.removeNode(node, n.c)) return true;
+    for (const n of list) if ((n.c && this.removeNode(node, n.c)) || (n.c2 && this.removeNode(node, n.c2))) return true;
     return false;
   }
   // ---------- 끌어다 놓기 ----------
@@ -363,8 +451,8 @@ class Builder {
   }
   isInside(list, node) {
     if (!node.c) return false;
-    if (list === node.c) return true;
-    for (const n of node.c) if (this.isInside(list, n)) return true;
+    if (list === node.c || list === node.c2) return true;
+    for (const n of node.c.concat(node.c2 || [])) if (this.isInside(list, n)) return true;
     return false;
   }
   dragDrop(e) {
@@ -381,27 +469,48 @@ class Builder {
   dragEnd() { if (this.drag && this.drag.ghost) this.drag.ghost.remove(); this.drag = null; }
 
   // ================= 실행 =================
-  run() {
-    const g = this.g, p = g.player;
+  // opt: { step: 한 단계씩, anchor: 미리보기 자리 그대로 }
+  run(opt) {
+    opt = opt || {};
+    const g = this.g;
     if (!g.world) return;
-    this.stop();
+    this.stop(true);
     const lk = this.lockedIn(this.program);
     if (lk.size) { const m = '🔒 아직 열리지 않은 블록이 있어요: ' + [...lk].map(t => `「${codeName(t)}」(${CODE_KEYS[t][1]} 필요)`).join(', '); this.log(m); g.ui.toast(m, 4000); return; }
-    const f = g.lookDirH();
-    this.facing = f; this.startFacing = f;
-    this.bx = Math.floor(p.x) + DX[f] * 2; this.by = Math.floor(p.y + 0.01); this.bz = Math.floor(p.z) + DZ[f] * 2;
-    this.sx = this.bx; this.sy = this.by; this.sz = this.bz;
-    this.block = BL.stone; this.blockMeta = 0; this.pen = false;
-    this.vars = { i: 0, j: 0, k: 0, x: 0, y: 0 };
+    const pv = opt.anchor ? this.prev : null;
+    this.begin(pv);
+    this.previewed = !!pv;
+    this.clearPreview();
     this.undo = new Map();
-    this.placed = 0;
     this.gen = this.runList(this.program);
     this.running = true; this.visible = true; this.acc = 0;
-    this.log('빌더봇 작업 시작! 🤖');
+    this.paused = !!opt.step; this.stepReq = false;
+    this.log(opt.step ? '👣 한 단계씩 실행해요. 오른쪽 「다음 ▶」을 눌러 보세요.' : '빌더봇 작업 시작! 🤖');
     this.updateStatus();
     g.ui.closeModal();
   }
-  stop() { if (this.running) this.log('멈췄어요'); this.running = false; this.gen = null; this.curNode = null; this.updateStatus(); }
+  // 실행 상태 처음으로 (시작 자리·방향·변수·함수 목록)
+  begin(pv) {
+    const g = this.g, p = g.player;
+    const f = pv ? pv.facing : g.lookDirH();
+    this.facing = f; this.startFacing = f;
+    if (pv) { this.bx = pv.sx; this.by = pv.sy; this.bz = pv.sz; }
+    else { this.bx = Math.floor(p.x) + DX[f] * 2; this.by = Math.floor(p.y + 0.01); this.bz = Math.floor(p.z) + DZ[f] * 2; }
+    this.sx = this.bx; this.sy = this.by; this.sz = this.bz;
+    this.block = BL.stone; this.blockMeta = 0; this.pen = false;
+    this.vars = { i: 0, j: 0, k: 0, x: 0, y: 0, '높이': 0, '놓은수': 0 };
+    this.placed = 0; this.depth = 0;
+    this.funcs = {}; this.collectFuncs(this.program);
+    this.stats = { used: new Set(), placed: 0, colorSet: new Set(), calls: 0, randExpr: false };
+    this.curNode = null; this.waitT = 0;
+  }
+  collectFuncs(list) {
+    for (const n of list || []) {
+      if (n.t === 'func') { const k = String(n.a.f || '').trim(); if (k && !this.funcs[k]) this.funcs[k] = n; }
+      if (n.c) this.collectFuncs(n.c); if (n.c2) this.collectFuncs(n.c2);
+    }
+  }
+  stop(quiet) { if (this.running && !quiet) this.log('멈췄어요'); this.running = false; this.gen = null; this.curNode = null; this.paused = false; this.updateStatus(); }
   doUndo() {
     if (this.survival()) { this.log('서바이벌에서는 되돌리기를 쓸 수 없어요. 재료를 돌려받으려면 직접 부숴요.'); this.g.ui.toast('서바이벌에서는 되돌리기를 쓸 수 없어요'); return; }
     if (!this.undo || !this.undo.size) { this.log('되돌릴 것이 없어요'); return; }
@@ -410,55 +519,163 @@ class Builder {
     this.log(`${this.undo.size}칸을 되돌렸어요`);
     this.undo = null;
   }
-  updateStatus() {
+  // ---- 미리보기: 블록을 놓지 않고 끝까지 돌려 보고, 생길 자리를 테두리로 보여 줌 ----
+  preview() {
+    const g = this.g;
+    if (!g.world) return;
+    this.stop(true); this.clearPreview();
+    const lk = this.lockedIn(this.program);
+    if (lk.size) { this.log('🔒 아직 열리지 않은 블록이 있어요: ' + [...lk].map(t => `「${codeName(t)}」`).join(', ')); return; }
+    this.begin(null);
+    const anchor = { sx: this.sx, sy: this.sy, sz: this.sz, facing: this.facing };
+    this.dry = new Map();
+    const gen = this.runList(this.program);
+    let steps = 0, err = null, cut = false;
+    const t0 = performance.now();
+    try {
+      for (;;) {
+        const r = gen.next(); if (r.done) break;
+        if (++steps > 400000 || this.dry.size > 60000 || performance.now() - t0 > 1500) { cut = true; break; }
+      }
+    } catch (e) { if (!(e && e.botStop)) err = e; }
+    const cells = this.dry; this.dry = null;
+    if (err) { this.log('🤖 코드 오류: ' + (err.message || err)); return; }
+    const w = g.world, need = new Map();
+    let add = 0, remove = 0;
+    const pos = [], neg = [];
+    for (const [k, v] of cells) {
+      const [x, y, z] = parseKey(k);
+      if (w.getBlock(x, y, z) === v[0] && w.getMeta(x, y, z) === v[1]) continue;
+      if (v[0]) { add++; if (pos.length < 36000) pos.push(x - anchor.sx, y - anchor.sy, z - anchor.sz); const it = botItemFor(v[0], v[1]); if (it !== null) need.set(it, (need.get(it) || 0) + 1); }
+      else if (w.getBlock(x, y, z)) { remove++; if (neg.length < 18000) neg.push(x - anchor.sx, y - anchor.sy, z - anchor.sz); }
+    }
+    const E = [[0, 0, 0, 1, 0, 0], [1, 0, 0, 1, 0, 1], [1, 0, 1, 0, 0, 1], [0, 0, 1, 0, 0, 0], [0, 1, 0, 1, 1, 0], [1, 1, 0, 1, 1, 1], [1, 1, 1, 0, 1, 1], [0, 1, 1, 0, 1, 0], [0, 0, 0, 0, 1, 0], [1, 0, 0, 1, 1, 0], [1, 0, 1, 1, 1, 1], [0, 0, 1, 0, 1, 1]];
+    const edges = (list) => {
+      const out = new Float32Array(list.length / 3 * 72); let o = 0;
+      for (let i = 0; i < list.length; i += 3) {
+        const x = list[i], y = list[i + 1], z = list[i + 2];
+        for (const e of E) { out[o++] = x + e[0] * 0.98 + 0.01; out[o++] = y + e[1] * 0.98 + 0.01; out[o++] = z + e[2] * 0.98 + 0.01; out[o++] = x + e[3] * 0.98 + 0.01; out[o++] = y + e[4] * 0.98 + 0.01; out[o++] = z + e[5] * 0.98 + 0.01; }
+      }
+      return out;
+    };
+    const origin = [anchor.sx, anchor.sy, anchor.sz];
+    this.prev = Object.assign(anchor, { add, remove, need, cut,
+      lines: [pos.length ? { data: edges(pos), origin, color: [0.25, 0.85, 1, 0.9] } : null, neg.length ? { data: edges(neg), origin, color: [1, 0.35, 0.4, 0.9] } : null].filter(Boolean) });
+    this.visible = false;
+    this.log(`👁 미리보기: 놓을 블록 ${add}칸${remove ? ` · 치울 블록 ${remove}칸` : ''}${cut ? ' (너무 커서 일부만)' : ''}`);
+    this.updateStatus(true);
+    g.ui.closeModal();
+  }
+  clearPreview() {
+    const R = this.g.renderer;
+    if (this.prev && this.prev.lines && R && R.freeLines) for (const L of this.prev.lines) R.freeLines(L);
+    this.prev = null;
+  }
+  needText() {
+    const pv = this.prev, p = this.g.player; if (!pv || p.creative || !pv.need.size) return '';
+    const parts = [];
+    for (const [id, n] of [...pv.need].sort((a, b) => b[1] - a[1]).slice(0, 6)) { const have = p.count(id); parts.push(`<span class="${have >= n ? 'ok' : 'lack'}">${esc(itemName(id))} ${n}${have >= n ? ' ✓' : ` (가진 것 ${have})`}</span>`); }
+    return '<div class="bs-need">필요한 재료: ' + parts.join(' · ') + (pv.need.size > 6 ? ' …' : '') + '</div>';
+  }
+  // 오른쪽 상태 창 (모양이 바뀔 때만 다시 그림 — 매 프레임 DOM 을 새로 만들지 않게)
+  updateStatus(force) {
     const el = document.getElementById('bot-status');
     if (!el) return;
-    if (this.running) {
-      el.classList.add('show');
-      el.innerHTML = `🤖 빌더봇 작업 중 · ${this.placed}칸 <button class="btn small red" id="bs-stop">멈춤</button>`;
-      el.querySelector('#bs-stop').onclick = () => this.stop();
-    } else if (this.undo && this.undo.size && this.visible && !this.survival()) {
-      el.classList.add('show');
-      el.innerHTML = `🤖 완성! ${this.placed}칸 <button class="btn small" id="bs-undo">↶ 되돌리기</button><button class="btn small" id="bs-x">✕</button>`;
-      el.querySelector('#bs-undo').onclick = () => { this.doUndo(); this.visible = false; this.updateStatus(); };
-      el.querySelector('#bs-x').onclick = () => { this.visible = false; this.updateStatus(); };
-    } else el.classList.remove('show');
+    const mode = this.running ? (this.paused ? 'pause' : 'run') : this.prev ? 'prev' : (this.undo && this.undo.size && this.visible && !this.survival()) ? 'done' : '';
+    if (mode !== this._stMode || force) {
+      this._stMode = mode; this._stTxt = null;
+      el.classList.toggle('show', !!mode);
+      if (mode === 'run' || mode === 'pause') {
+        el.innerHTML = `🤖 <b class="bs-n">0</b>칸 <small class="bs-cur"></small><span class="bs-btns">${mode === 'pause' ? '<button class="btn small primary" id="bs-step">다음 ▶</button><button class="btn small" id="bs-go">계속 ⏩</button>' : '<button class="btn small" id="bs-pause" title="잠깐 멈추고 한 단계씩">⏸</button>'}<button class="btn small red" id="bs-stop">멈춤</button></span>`;
+        el.querySelector('#bs-stop').onclick = () => this.stop();
+        if (mode === 'pause') { el.querySelector('#bs-step').onclick = () => { this.stepReq = true; }; el.querySelector('#bs-go').onclick = () => { this.paused = false; this.updateStatus(); }; }
+        else el.querySelector('#bs-pause').onclick = () => { this.paused = true; this.updateStatus(); };
+      } else if (mode === 'prev') {
+        const pv = this.prev;
+        el.innerHTML = `👁 미리보기 · 놓을 블록 <b>${pv.add}</b>칸${pv.remove ? ` · 치울 블록 ${pv.remove}칸` : ''}${this.needText()}<div class="bs-btns"><button class="btn small primary" id="bs-build">▶ 이대로 짓기</button><button class="btn small" id="bs-x">✕ 지우기</button></div>`;
+        el.querySelector('#bs-build').onclick = () => this.run({ anchor: true });
+        el.querySelector('#bs-x').onclick = () => { this.clearPreview(); this.updateStatus(); };
+      } else if (mode === 'done') {
+        el.innerHTML = `🤖 완성! ${this.placed}칸 <button class="btn small" id="bs-undo">↶ 되돌리기</button><button class="btn small" id="bs-x">✕</button>`;
+        el.querySelector('#bs-undo').onclick = () => { this.doUndo(); this.visible = false; this.updateStatus(); };
+        el.querySelector('#bs-x').onclick = () => { this.visible = false; this.updateStatus(); };
+      } else el.innerHTML = '';
+    }
+    if (mode === 'run' || mode === 'pause') {
+      const txt = this.placed + '|' + (this.curNode ? this.curNode.t : '');
+      if (txt !== this._stTxt) {
+        this._stTxt = txt;
+        el.querySelector('.bs-n').textContent = this.placed;
+        el.querySelector('.bs-cur').textContent = this.curNode && CODE_DEFS[this.curNode.t] ? '· ' + codeName(this.curNode.t) : '';
+      }
+    }
+  }
+  finishRun() {
+    const g = this.g, st = this.stats;
+    this.running = false; this.gen = null; this.curNode = null; this.paused = false;
+    g.ui.chatLine(`🤖 빌더봇: 다 지었어요! (${this.placed}칸)`, '#9ff');
+    g.sound.play('levelup');
+    if (st) {
+      st.placed = this.placed; st.colors = st.colorSet.size; st.previewed = this.previewed;
+      if (this.placed > 0 && g.advGrant) g.advGrant('bot');
+      this.checkMissions(st);
+    }
+    this.updateStatus();
   }
   update(dt) {
     this.anim += dt;
     this.scanFound(dt);
     if (!this.running || !this.gen) return;
-    if (this.waitT > 0) { this.waitT -= dt; return; }
-    this.acc += dt * this.speed;
+    if (this.paused && !this.stepReq) return;
+    if (this.waitT > 0 && !this.paused) { this.waitT -= dt; return; }
+    let budget;
+    if (this.paused) { this.stepReq = false; this.waitT = 0; budget = 1; }
+    else { this.acc += dt * this.speed; budget = Math.floor(this.acc); this.acc -= budget; }
     let steps = 0;
     const t0 = performance.now();
-    while (this.acc >= 1 && performance.now() - t0 < 12) {
-      this.acc -= 1; steps++;
+    while (steps < budget && performance.now() - t0 < 12) {
+      steps++;
       let r;
       try { r = this.gen.next(); } catch (e) {
+        if (e && e.botStop) { this.finishRun(); this.log('「코드 멈추기」 블록에서 멈췄어요'); return; }
         if (e && e.botOut) { this.g.ui.chatLine(`🤖 빌더봇: ${itemName(e.botOut)}이(가) 다 떨어졌어요! 가방에 더 모아 오면 이어서 지을 수 있어요. (${this.placed}칸 지음)`, '#ffb37a'); this.g.ui.toast(`🤖 ${itemName(e.botOut)}이(가) 부족해요`); }
-        else this.g.ui.chatLine('🤖 코드 오류: ' + e.message, '#f88');
+        else this.g.ui.chatLine('🤖 코드 오류: ' + (e.message || e), '#f88');
         this.stop(); return;
       }
-      if (r.done) {
-        this.running = false; this.gen = null; this.curNode = null;
-        this.g.ui.chatLine(`🤖 빌더봇: 다 지었어요! (${this.placed}칸)`, '#9ff');
-        this.g.sound.play('levelup');
-        this.updateStatus();
-        return;
-      }
+      if (r.done) { this.finishRun(); return; }
       if (this.waitT > 0) break;
     }
     if (steps && (this.anim * 4 | 0) % 2 === 0) this.g.sound.play('bot', this.bx, this.by, this.bz);
     this.updateStatus();
   }
+  // ---- 코딩 도전 과제 ----
+  missionsDone() { try { return new Set(JSON.parse(localStorage.getItem('educraft.codeMissions') || '[]')); } catch (e) { return new Set(); } }
+  checkMissions(st) {
+    const done = this.missionsDone(), g = this.g, fresh = [];
+    for (const [id, title, , check] of CODE_MISSIONS) if (!done.has(id) && check(st)) { done.add(id); fresh.push(title); }
+    if (!fresh.length) return;
+    try { localStorage.setItem('educraft.codeMissions', JSON.stringify([...done])); } catch (e) { }
+    for (const t of fresh) { g.ui.toast(`🏅 코딩 도전 「${t}」 성공! (${done.size}/${CODE_MISSIONS.length})`, 3200); g.ui.chatLine(`🏅 코딩 도전 「${t}」 성공!`, '#ffe27a'); }
+    g.sound.play('levelup');
+    if (g.spawnXP && g.player) g.spawnXP(g.player.x, g.player.y + 1, g.player.z, 4 * fresh.length);
+    if (done.size >= 3 && g.advGrant) g.advGrant('coder');
+    this.renderMissions();
+  }
+  renderMissions() {
+    const done = this.missionsDone(), n = document.getElementById('cd-misn'), box = document.getElementById('cd-missions');
+    if (n) n.textContent = `${done.size}/${CODE_MISSIONS.length}`;
+    if (!box || !box.classList.contains('show')) return;
+    box.innerHTML = '<h4>🏅 코딩 도전 과제</h4><p class="muted">코드를 끝까지 실행하면 확인해요. 깰 때마다 경험치!</p>' +
+      CODE_MISSIONS.map(([id, t, d]) => `<div class="cm ${done.has(id) ? 'done' : ''}"><b>${done.has(id) ? '✅' : '⬜'} ${esc(t)}</b><small>${esc(d)}</small></div>`).join('');
+  }
   // ---- 인터프리터 ----
-  num(s) { const v = evalExpr(s, this.vars); return v; }
+  num(s) { if (this.stats && !this.stats.randExpr && /random|무작위/.test(s)) this.stats.randExpr = true; return evalExpr(s, this.vars); }
   inum(s) { return Math.round(this.num(s)); }
   *runList(list) {
     let guard = 0;
     for (const node of list) {
       this.curNode = node;
+      if (this.stats) this.stats.used.add(node.t);
       yield* this.exec(node);
       if (++guard > 100000) return;
     }
@@ -480,6 +697,8 @@ class Builder {
     if (y < 1 || y >= HEIGHT) return;
     if (!w.isLoadedAt(x, z)) return;
     const k = fmtKey(x, y, z);
+    // 미리보기: 세계를 바꾸지 않고 기록만
+    if (this.dry) { if (this.dry.size < 200000) this.dry.set(k, [id, meta | 0]); if (id) { this.placed++; this.vars['놓은수'] = this.placed; } return; }
     if (!this.undo.has(k)) this.undo.set(k, [w.getBlock(x, y, z), w.getMeta(x, y, z)]);
     if (w.getBlock(x, y, z) === id && w.getMeta(x, y, z) === (meta | 0)) return;
     // 서바이벌: 가방의 재료를 쓰고, 치운 블록은 가방으로 (기반암·흑요석은 못 부숨)
@@ -499,19 +718,42 @@ class Builder {
         if (need !== null) p.take(need, 1);
       }
       if (cur && !IS_FLUID[cur] && !(cd && cd.replace)) {
-        for (const [iid, n] of this.g.blockDrops(cur, w.getMeta(x, y, z), null)) if (n > 0) { const left = p.give(iid, n); if (left) this.g.dropItem(x + 0.5, y + 0.5, z + 0.5, { id: iid, n: left }); }
+        for (const [iid, n] of this.g.blockDrops(cur, w.getMeta(x, y, z), { kind: cd.tool, tier: 4 })) if (n > 0) { const left = p.give(iid, n); if (left) this.g.dropItem(x + 0.5, y + 0.5, z + 0.5, { id: iid, n: left }); }
       }
       if (this.placed % 8 === 0) this.g.ui.refreshHotbar();
     }
     this.g.setBlockNet(x, y, z, id, meta | 0);
-    this.placed++;
+    this.placed++; this.vars['놓은수'] = this.placed;
+    if (id && this.stats && /^(wool|concrete)_/.test(BLOCKS[id].name)) this.stats.colorSet.add(id);
     if (this.placed % 3 === 0) this.g.particles.dust(x + 0.5, y + 0.5, z + 0.5, [0.5, 0.9, 1]);
   }
   putCur(x, y, z) { this.put(x, y, z, this.block, this.blockMeta); }
+  // 감지: 미리보기 중이면 기록한 블록을 먼저 봄
+  sense(x, y, z) { if (this.dry) { const v = this.dry.get(fmtKey(x, y, z)); if (v) return v[0]; } return this.g.world.getBlock(x, y, z); }
+  solidAt(x, y, z) { const id = this.sense(x, y, z); return !!id && !IS_FLUID[id] && !(BLOCKS[id] && BLOCKS[id].replace); }
+  cond(a) {
+    const f = this.facing, x = this.bx, y = this.by, z = this.bz, g = this.g;
+    switch (a.c) {
+      case 'ahead': return this.solidAt(x + DX[f], y, z + DZ[f]);
+      case 'aheadAir': return !this.solidAt(x + DX[f], y, z + DZ[f]);
+      case 'below': return this.solidAt(x, y - 1, z);
+      case 'belowAir': return !this.solidAt(x, y - 1, z);
+      case 'above': return this.solidAt(x, y + 1, z);
+      case 'here': return this.solidAt(x, y, z);
+      case 'water': return this.sense(x, y - 1, z) === BL.water;
+      case 'coin': if (this.stats) this.stats.randExpr = true; return Math.random() < 0.5;
+      case 'day': return g.world.dayFactor() > 0.4;
+      case 'night': return g.world.dayFactor() <= 0.4;
+      case 'near': { const p = g.player; return Math.hypot(p.x - x - 0.5, p.y - y, p.z - z - 0.5) <= 5; }
+      case 'expr': return this.num(a.e || '0') !== 0;
+    }
+    return false;
+  }
   *step(dr, du, df) {
     const old = [this.bx, this.by, this.bz];
     const fv = this.fwdVec(), rv = this.rightVec();
     this.bx += rv[0] * dr + fv[0] * df; this.by += du; this.bz += rv[1] * dr + fv[1] * df;
+    this.vars['높이'] = this.by - this.sy;
     if (this.pen) this.putCur(old[0], old[1], old[2]);
     yield;
   }
@@ -644,10 +886,10 @@ class Builder {
         for (let i = s, c = 0; st > 0 ? i <= e : i >= e; i += st) { this.vars[v] = i; yield* this.runList(n.c || []); if (++c > 10000) break; }
         return;
       }
-      case 'wait': this.waitT = Math.max(0, this.num(a.s)); yield; return;
+      case 'wait': if (!this.dry) this.waitT = Math.max(0, this.num(a.s)); yield; return;
       case 'set': this.vars[(a.v || 'x').trim()] = this.num(a.x); return;
       case 'change': { const v = (a.v || 'x').trim(); this.vars[v] = (this.vars[v] || 0) + this.num(a.x); return; }
-      case 'say': { let s = String(a.s || ''); s = s.replace(/\{(\w+)\}/g, (_, k) => this.vars[k] !== undefined ? this.vars[k] : '?'); this.g.ui.chatLine('🤖 빌더봇: ' + s, '#9ff'); this.g.ui.toast('🤖 ' + s); return; }
+      case 'say': { if (this.dry) return; let s = String(a.s || ''); s = s.replace(/\{(\w+)\}/g, (_, k) => this.vars[k] !== undefined ? this.vars[k] : '?'); this.g.ui.chatLine('🤖 빌더봇: ' + s, '#9ff'); this.g.ui.toast('🤖 ' + s); return; }
       case 'rsLine': {
         const c = this.inum(a.n);
         for (let i = 0; i < c; i++) {
@@ -666,6 +908,48 @@ class Builder {
         return;
       }
       case 'rsEx': yield* this.example(a.e); return;
+      case 'face': this.facing = { n: 2, s: 3, w: 4, e: 5 }[a.d] || this.facing; yield; return;
+      case 'come': { const p = this.g.player, f = this.g.lookDirH(); this.facing = f; this.bx = Math.floor(p.x) + DX[f] * 2; this.by = Math.floor(p.y + 0.01); this.bz = Math.floor(p.z) + DZ[f] * 2; yield; return; }
+      case 'circle': {
+        const R = Math.min(32, Math.abs(this.inum(a.r))), hollow = a.fill !== 'solid';
+        for (let f = -R; f <= R; f++) for (let r = -R; r <= R; r++) { const d = Math.sqrt(r * r + f * f); if (d > R + 0.5 || (hollow && d < R - 0.5)) continue; this.putCur(...this.L(r, 0, f)); yield; }
+        return;
+      }
+      case 'line': {
+        const X = this.inum(a.x), Y = this.inum(a.y), Z = this.inum(a.z), n = Math.min(256, Math.max(Math.abs(X), Math.abs(Y), Math.abs(Z)));
+        for (let i = 0; i <= n; i++) { const t = n ? i / n : 0; this.putCur(...this.L(Math.round(X * t), Math.round(Y * t), Math.round(Z * t))); yield; }
+        return;
+      }
+      case 'copy': {
+        const d = Math.min(32, this.inum(a.d)), w = Math.min(32, this.inum(a.w)), h = Math.min(32, this.inum(a.h)), cells = [], wo = this.g.world;
+        for (let u = 0; u < h; u++) for (let f = 0; f < d; f++) for (let r = 0; r < w; r++) {
+          const [X, Y, Z] = this.L(r, u, f), id = this.sense(X, Y, Z);
+          if (id && !IS_FLUID[id] && BLOCKS[id] && BLOCKS[id].item !== false && id !== BL.bedrock) cells.push([r, u, f, id, this.dry && this.dry.has(fmtKey(X, Y, Z)) ? this.dry.get(fmtKey(X, Y, Z))[1] : wo.getMeta(X, Y, Z)]);
+        }
+        this.clip = cells;
+        if (!this.dry) this.g.ui.chatLine(`🤖 ${cells.length}칸을 복사했어요`, '#9ff');
+        yield; return;
+      }
+      case 'paste': {
+        if (!this.clip || !this.clip.length) throw new Error('먼저 「복사하기」로 복사해 주세요');
+        for (const [r, u, f, id, m] of this.clip) { this.put(...this.L(r, u, f), id, m); yield; }
+        return;
+      }
+      case 'if': if (this.cond(a)) yield* this.runList(n.c || []); return;
+      case 'ifelse': yield* this.runList((this.cond(a) ? n.c : n.c2) || []); return;
+      case 'until': { for (let k = 0; k < 10000 && !this.cond(a); k++) { yield* this.runList(n.c || []); yield; } return; }
+      case 'forever': { for (let k = 0; k < 100000; k++) { this.vars['반복'] = k + 1; yield* this.runList(n.c || []); yield; } return; }
+      case 'stop': throw { botStop: true };
+      case 'func': return;   // 함수 만들기는 부를 때만 실행
+      case 'call': {
+        const name = String(a.f || '').trim(), fn = this.funcs && this.funcs[name];
+        if (!fn) throw new Error(`「${name}」 함수가 없어요. 「함수 ${name} 만들기」 블록을 먼저 놓아 주세요`);
+        if (this.depth > 40) throw new Error('함수가 너무 여러 번 겹쳐 불렸어요 (40번까지)');
+        this.depth++; if (this.stats) this.stats.calls++;
+        try { yield* this.runList(fn.c || []); } finally { this.depth--; }
+        return;
+      }
+      case 'rand': { const v = (a.v || 'x').trim() || 'x'; this.vars[v] = EXPR_FN.random(this.num(a.a), this.num(a.b)); return; }
     }
   }
   // 전기 부품을 방향에 맞게 놓기 (d: 부품이 향하는/출력하는 방향)
@@ -687,7 +971,7 @@ class Builder {
     const P = (r, u, f, id, dir) => this.placePart(...this.L(r, u, f), typeof id === 'string' ? BL[id] : id, dir === undefined ? this.facing : this.relDir(dir));
     const base = function* (self, r0, r1, f0, f1) { for (let f = f0; f <= f1; f++) for (let r = r0; r <= r1; r++) { self.put(...self.L(r, -1, f), BL.smooth_stone, 0); yield; } };
     const clearAbove = function* (self, r0, r1, f0, f1, h) { for (let u = 0; u < h; u++) for (let f = f0; f <= f1; f++) for (let r = r0; r <= r1; r++) { self.put(...self.L(r, u, f), 0, 0); } yield; };
-    const say = (s) => { this.g.ui.chatLine('🤖 ' + s, '#9ff'); };
+    const say = (s) => { if (!this.dry) this.g.ui.chatLine('🤖 ' + s, '#9ff'); };
     switch (name) {
       case 'lamp':
         yield* clearAbove(this, -1, 1, 0, 6, 3); yield* base(this, -1, 1, 0, 6);

@@ -57,7 +57,9 @@ class Game {
     this.state = 'boot';
     this.settings = Object.assign({}, DEFAULT_SETTINGS);
     try { Object.assign(this.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch (e) { }
-    if (isTouchDevice() && !localStorage.getItem(SETTINGS_KEY)) { this.settings.quality = 1; this.settings.renderDist = 4; this.settings.renderScale = 0.75; }
+    let firstRun = true; try { firstRun = !localStorage.getItem(SETTINGS_KEY); } catch (e) { }
+    if (isTouchDevice() && firstRun) { this.settings.quality = 1; this.settings.renderDist = 4; this.settings.renderScale = 0.75; }
+    this.firstRun = firstRun;
     if (!this.settings.name) this.settings.name = '플레이어' + (1 + Math.random() * 999 | 0);
     // 내 아바타
     const avs = loadAvatarStore();
@@ -72,6 +74,20 @@ class Game {
     this.tickAcc = 0; this.fps = 0; this.fpsAcc = 0; this.fpsN = 0;
     this.breakProg = 0; this.breakTarget = null; this.swing = 0; this.breakCooldown = 0; this.useCooldown = 0; this.attackCooldown = 0;
     this.eatT = 0; this.bowT = 0; this.rain = 0; this.rainTarget = 0; this.hurtFx = 0; this.equip = 0; this.lastHeld = -1;
+  }
+  // 처음 켤 때: 교실 노트북(내장 그래픽·코어 4개 이하)이면 가벼운 화질로 시작 (느려지기 전에)
+  guessLowEnd() {
+    let gpu = '';
+    try { const gl = this.renderer.gl, ext = gl.getExtension('WEBGL_debug_renderer_info'); gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); } catch (e) { }
+    const cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 8;
+    const goodIgpu = /iris\(r\) xe|iris xe|arc|radeon\(tm\) 6|radeon 7/i.test(gpu);
+    const weakGpu = /intel|uhd|hd graphics|mali|adreno|powervr|swiftshader|llvmpipe|basic render/i.test(gpu) && !goodIgpu;
+    const soft = /swiftshader|llvmpipe|basic render|microsoft basic/i.test(gpu);
+    const s = this.settings;
+    if (soft) { s.quality = 0; s.renderDist = 4; s.renderScale = 0.6; }
+    else if (weakGpu && (cores <= 4 || mem <= 4)) { s.quality = 1; s.renderDist = 5; s.renderScale = 0.85; }
+    else if (weakGpu || cores <= 4) { s.quality = 1; s.renderDist = 6; }
+    this.gpuName = gpu;
   }
   saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings)); } catch (e) { } }
   setAvatar(av) {
@@ -96,6 +112,7 @@ class Game {
     this.avatarEd = new AvatarEditor(this);
     this.minimap = new Minimap(this);
     this.net = new Net(this);
+    if (this.firstRun && !isTouchDevice()) this.guessLowEnd();
     this.applySettings();
     this.ui.showMain();
     this.state = 'menu';
@@ -292,7 +309,8 @@ class Game {
   // rAF 가 멈춘 환경(미리보기 창 등)을 위한 보조 타이머
   watchdog() {
     setInterval(() => {
-      if (document.visibilityState === 'visible' && performance.now() - (this.lastRaf || 0) > 400) this.frameStep(performance.now());
+      // 화면이 보일 때(rAF 멈춤 대비), 또는 함께 하기 중일 때(방장이 다른 창을 봐도 세계가 멈추지 않게)
+      if ((document.visibilityState === 'visible' || (this.net && this.net.connected)) && performance.now() - (this.lastRaf || 0) > 400) this.frameStep(performance.now());
     }, 50);
   }
   frameStep(t) {
@@ -305,7 +323,7 @@ class Game {
       else if (this.state === 'play') {
         const paused = !this.net.connected && (this.ui.modal === 'pause' || this.ui.modal === 'settings');
         if (!paused) this.update(dt);
-        this.render(dt);
+        if (!document.hidden) this.render(dt);   // 숨겨진 창은 계산만
       }
     } catch (e) {
       console.error(e);
@@ -590,7 +608,8 @@ class Game {
   }
   blockDrops(id, meta, heldTool, rnd) {
     const d = BLOCKS[id]; if (!d) return [];
-    if (d.lvl && !(heldTool && heldTool.kind === d.tool && heldTool.tier >= d.lvl)) return [];
+    // 에듀 크래프트: 돌·조약돌처럼 1단계 블록(광석 제외)은 맨손으로도 얻음 (느리게 캐질 뿐)
+    if (d.lvl && !(heldTool && heldTool.kind === d.tool && heldTool.tier >= d.lvl) && !(d.lvl === 1 && !/_ore$/.test(d.name))) return [];
     let dr = d.drop;
     if (typeof dr === 'function') return dr(meta, rnd || Math.random);
     if (dr === undefined || dr === null) return [];
@@ -624,7 +643,7 @@ class Game {
     // 떨어뜨리기
     if (ev.drop && held) {
       const n = ev.dropAll ? held.n : 1;
-      const item = { id: held.id, n }; if (held.d) item.d = held.d;
+      const item = { id: held.id, n }; if (held.d) item.d = held.d; if (held.e) item.e = held.e;
       held.n -= n; if (held.n <= 0) p.inv[p.sel] = null;
       this.dropItem(p.x, p.eyeY() - 0.3, p.z, item, [dir[0] * 6, dir[1] * 6 + 2, dir[2] * 6]);
       this.ui.refreshHotbar();
@@ -707,7 +726,7 @@ class Game {
     let speed = 1;
     if (tool && tool.kind === d.tool) speed = tool.speed;
     if (tool && tool.kind === 'sword' && d.wave === 1) speed = 1.5;
-    let t = d.hard * (can ? 1.5 : 5) / speed;
+    let t = d.hard * (can ? 1.5 : (d.lvl === 1 && !/_ore$/.test(d.name) ? 3 : 5)) / speed;
     if (this.player.inWater && !this.player.onGround) t *= 5;
     return Math.max(0.05, t);
   }
@@ -1345,7 +1364,7 @@ class Game {
   despawnMobs() {
     const pls = this.allPlayers();
     for (const e of this.ents.list) {
-      if (e.type !== 'mob' || e.dead || e.def.boss) continue;
+      if (e.type !== 'mob' || e.dead || e.def.boss || e.def.persist || e.tamed) continue;
       let md = Infinity; for (const p of pls) md = Math.min(md, (p.x - e.x) ** 2 + (p.z - e.z) ** 2);
       if (e.def.hostile && md > 80 * 80) e.dead = true;
       else if (!e.def.hostile && md > 140 * 140) e.dead = true;
@@ -1493,9 +1512,12 @@ class Game {
     }
     const underwater = w.getBlock(Math.floor(cam[0]), Math.floor(cam[1] + 0.05), Math.floor(cam[2])) === BL.water;
     // 개체
+    // (최적화) 너무 멀거나 카메라 뒤쪽(시야 밖)인 개체는 그리지 않음
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rd2 = (this.settings.renderDist * 16) ** 2;
     for (const e of this.ents.list) if (!e.dead && e.render) {
-      const dx = e.x - cam[0], dz = e.z - cam[2];
-      if (dx * dx + dz * dz > (this.settings.renderDist * 16) ** 2) continue;
+      const dx = e.x - cam[0], dz = e.z - cam[2], d2 = dx * dx + dz * dz;
+      if (d2 > rd2) continue;
+      if (d2 > 36 && (dx * fx + dz * fz) < -Math.sqrt(d2) * 0.35 - (e.w || 1)) continue;
       e.render(this, R, cam);
     }
     // 다른 플레이어
@@ -1562,7 +1584,7 @@ class Game {
       world: w, cam, yaw, pitch, fov: this.settings.fov * (p.sprinting ? 1.1 : 1) * (this.bowT > 0 ? 1 - Math.min(1, this.bowT) * 0.15 : 1), renderDist: this.settings.renderDist,
       time: performance.now() / 1000, blockEnts: this.frame.blockEnts, particles: parts, crack, selLines: sel, hand, underwater,
       clouds: this.settings.clouds && w.dim === 'overworld', rain: w.dim === 'overworld' ? this.rain : 0, rainBuf, bob, hurt: this.hurtFx, bright: skyLightBoost,
-      fogScale: w.dim === 'nether' ? 0.62 : 0,
+      fogScale: w.dim === 'nether' ? 0.62 : 0, extraLines: this.builder.prev ? this.builder.prev.lines : null,
     });
     this.ui.updateNameTags(cam);
   }

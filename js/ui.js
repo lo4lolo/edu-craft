@@ -5,7 +5,7 @@
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const VERSION = 'v1.0';
+const VERSION = 'v1.2';
 
 // HUD용 픽셀 아이콘 (하트/배고픔/숨)
 const HUD_ART = {
@@ -62,6 +62,8 @@ class UI {
     document.addEventListener('pointermove', e => { this.mx = e.clientX; this.my = e.clientY; if (this.cursor) this.moveCursor(); if (this.tip.style.display === 'block') this.placeTip(); });
     const ci = $('#chat-input');
     ci.addEventListener('keydown', e => {
+      // 한글 조합 중 Enter 는 글자 확정용 (웨일·엣지·크롬에서 마지막 글자가 두 번 가거나 남는 문제)
+      if (e.isComposing || e.keyCode === 229) { e.stopPropagation(); return; }
       if (e.key === 'Enter') { const v = ci.value.trim(); ci.value = ''; this.closeChat(); if (v) this.submitChat(v); e.preventDefault(); }
       else if (e.key === 'Escape') { this.closeChat(); }
       e.stopPropagation();
@@ -266,6 +268,7 @@ class UI {
           <button class="btn primary" id="mp-join">들어가기</button></div>
           <p class="muted">${lan ? 'LAN 서버 방은 위 목록에서 누르면 바로 들어갑니다. ' : ''}방 코드는 인터넷 연결 방식(P2P)으로 만든 방에 쓰입니다. 친구의 화면에 보이는 코드를 입력하세요.</p>`;
         $('#mp-join', s).onclick = () => { const code = $('#mp-code', s).value.trim(); if (code) g.net.joinPeer(code); };
+        $('#mp-code', s).addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) $('#mp-join', s).click(); });
         if (lan) g.net.listRooms(rooms => {
           const L = $('#mp-rooms', s); if (!L) return;
           L.innerHTML = rooms.length ? '' : '<div class="muted">아직 열린 방이 없어요. 친구가 방을 열면 여기 나타나요.</div>';
@@ -368,13 +371,23 @@ class UI {
     const s = this.screen('menu-help', `
       <div class="panel help" style="max-width:860px">
         <h2>📖 도움말</h2>
-        <div class="tabs" id="h-tabs"><button data-t="keys">조작법</button><button data-t="rs">⚡ 레드스톤</button><button data-t="ex">회로 예제</button><button data-t="code">🤖 블록 코딩</button><button data-t="survive">서바이벌</button><button data-t="dims">🔥 지옥과 엔드</button></div>
+        <div class="tabs" id="h-tabs"><button data-t="keys">조작법</button><button data-t="rs">⚡ 레드스톤</button><button data-t="ex">회로 예제</button><button data-t="code">🤖 블록 코딩</button><button data-t="survive">서바이벌</button><button data-t="vanilla">✨ 마을·마법·낚시</button><button data-t="dims">🔥 지옥과 엔드</button></div>
         <div id="h-body"></div>
         <div class="row"><span style="flex:1"></span><button class="btn primary" id="h-back">닫기</button></div>
       </div>`, this.g.state === 'play' ? '' : 'menu-bg');
     const body = $('#h-body', s);
     const icon = (name) => { const id = I(name); const n = ICON.idx[id]; return `<i class="rsi ic" style="background-position:${(n % ICON.cols) / (ICON.cols - 1) * 100}% ${Math.floor(n / ICON.cols) / (Math.max(2, Math.ceil(ICON.h / ICON.size)) - 1) * 100}%"></i>`; };
     const T = {
+      vanilla: `<h3>✨ 원작 마인크래프트 요소</h3><table>
+        <tr><td>경험치</td><td>광석을 캐고, 몹을 물리치고, 화로에서 구우면 초록 구슬이 나와요. 단축바 위 초록 막대가 차면 레벨이 올라요.</td></tr>
+        <tr><td>마법 부여대</td><td>책 + 다이아몬드 2 + 흑요석 4. 도구·갑옷·낚싯대를 넣고 청금석과 레벨을 써서 효율·날카로움·보호·내구성·바다의 행운을 걸어요.</td></tr>
+        <tr><td>마을</td><td>평원·사막·자작나무 숲에 마을이 있어요 (<code>/locate village</code>). 주민을 우클릭하면 에메랄드로 거래해요. 철 골렘이 마을을 지켜요.</td></tr>
+        <tr><td>늑대</td><td>숲·눈밭의 늑대에게 뼈를 주면 길들여져요. 우클릭으로 앉기/따라오기, 고기를 주면 회복. 저장해도 남아요.</td></tr>
+        <tr><td>낚시</td><td>막대기 3 + 실 2로 낚싯대. 물에 던지고 찌가 쏙 들어가면 다시 우클릭! 물고기·보물·경험치.</td></tr>
+        <tr><td>방패</td><td>판자 + 철 주괴. 들고 오른쪽 버튼을 누르고 있으면 공격·화살을 막아요.</td></tr>
+        <tr><td>나침반·시계</td><td>들고 있으면 집 방향 / 지금 시각을 보여 줘요.</td></tr>
+        <tr><td>농사·음식</td><td>당근·감자(마을 밭), 호박·잭오랜턴, 수박, 버섯 스튜, 구운 감자, 호박 파이, 황금 당근, 건초 더미.</td></tr>
+        <tr><td>도전 과제</td><td>나무 베기부터 드래곤까지 27개 (<kbd>L</kbd> 키). 깰 때마다 경험치!</td></tr></table>`,
       keys: `<h3>노트북 (키보드 + 마우스)</h3><table>
         <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>이동 (W 두 번 빠르게 = 달리기, <kbd>Ctrl</kbd>도 달리기)</td></tr>
         <tr><td><kbd>Space</kbd></td><td>점프 · 크리에이티브에서 두 번 빠르게 누르면 날기 / 날 때 위로</td></tr>
@@ -392,7 +405,8 @@ class UI {
         <tr><td><kbd>T</kbd> / <kbd>/</kbd></td><td>채팅 / 명령어 (<code>/help</code>)</td></tr>
         <tr><td><kbd>F</kbd></td><td>회로 정보 표시 켜기/끄기</td></tr>
         <tr><td><kbd>F1</kbd> <kbd>F3</kbd> <kbd>F5</kbd></td><td>화면 정보 숨기기 · 디버그 정보 · 3인칭 시점</td></tr>
-        <tr><td><kbd>Esc</kbd></td><td>일시정지 메뉴</td></tr></table>
+        <tr><td><kbd>Esc</kbd> / <kbd>P</kbd> / ☰</td><td>일시정지 메뉴 (멀티로 열기·친구 방 들어가기·저장·설정)</td></tr>
+        <tr><td><kbd>L</kbd></td><td>🏆 도전 과제</td></tr></table>
         <h3>휴대폰 · 태블릿 (터치)</h3><table>
         <tr><td>왼쪽 아래 끌기</td><td>이동 (끝까지 밀면 달리기)</td></tr>
         <tr><td>화면 끌기</td><td>둘러보기</td></tr>
@@ -454,7 +468,16 @@ class UI {
         <tr><td>① 블록 끌어오기</td><td>왼쪽 목록에서 블록을 끌어 오른쪽 작업판에 놓아요. (톡 누르면 맨 아래에 붙어요)</td></tr>
         <tr><td>② 값 바꾸기</td><td>숫자 칸에는 <code>5</code>, <code>i*2</code>, <code>반복+1</code> 같은 식도 쓸 수 있어요.</td></tr>
         <tr><td>③ 실행</td><td>▶ 실행을 누르면 빌더봇이 내 앞에 나타나 코드를 따라 움직여요. 속도 조절 가능!</td></tr>
-        <tr><td>④ 되돌리기</td><td>↶ 되돌리기를 누르면 마지막 실행으로 지은 것이 사라져요.</td></tr></table>
+        <tr><td>④ 되돌리기</td><td>↶ 되돌리기를 누르면 마지막 실행으로 지은 것이 사라져요.</td></tr>
+        <tr><td>👁 미리보기</td><td>짓기 전에 생길 자리를 파란 테두리로 보여 주고, 서바이벌이면 <b>필요한 재료</b>를 계산해 줘요. 「▶ 이대로 짓기」로 바로 지어요.</td></tr>
+        <tr><td>👣 한 단계씩</td><td>블록 하나씩 멈추며 실행해요. 오른쪽 창의 「다음 ▶」을 누를 때마다 한 걸음! (실행 중 ⏸ 로도 멈출 수 있어요)</td></tr>
+        <tr><td>🏅 코딩 도전</td><td>반복·만약·함수·무작위 같은 블록을 써서 12가지 도전을 깨 보세요.</td></tr></table>
+        <h3>새 블록 (v1.1)</h3><table>
+        <tr><td>만약 ~이면 / 아니면</td><td>앞·아래·위에 블록이 있는지, 물인지, 낮·밤, 동전 던지기, 또는 <code>i % 2 == 0</code> 같은 식으로 갈라져요.</td></tr>
+        <tr><td>~이(가) 될 때까지 반복 · 계속 반복</td><td>조건이 맞을 때까지 / 멈출 때까지 되풀이해요. 「코드 멈추기」로 끝낼 수 있어요.</td></tr>
+        <tr><td>함수 만들기 · 실행하기</td><td>자주 쓰는 블록 묶음에 이름을 붙이고 여러 번 불러요 (나만의 블록).</td></tr>
+        <tr><td>무작위 수 · 식</td><td><code>random(1, 6)</code>, <code>무작위(0, 15)</code>, 비교 <code>&lt; &gt; == !=</code>, <code>and / or / not</code>, 목록 <code>[14,1,4][i]</code>, <code>높이</code>·<code>놓은수</code> 변수.</td></tr>
+        <tr><td>원 · 선 · 복사/붙여넣기 · 바라보기 · 부르기</td><td>평평한 원, 비스듬한 선, 지은 것을 도장처럼 찍기, 북·남·동·서 보기, 빌더봇을 내 앞으로.</td></tr></table>
         <h3>🔓 서바이벌에서 코딩 블록 열기</h3><p>서바이벌에서는 처음에 <b>앞으로·뒤로·돌기·블록 고르기·놓기·말하기</b>만 쓸 수 있어요. 다른 코딩 블록은 정해진 <b>재료를 처음 얻으면</b> 하나씩 열려요. 잠긴 블록에는 🔒와 필요한 재료가 적혀 있어요.</p>
         <table>
         <tr><td>판자</td><td>왼쪽·오른쪽으로 이동</td></tr><tr><td>석탄(숯)</td><td>반복하기</td></tr><tr><td>제작대</td><td>뒤로 돌기 · 처음 자리로</td></tr>
@@ -531,12 +554,14 @@ class UI {
           <button class="btn primary" id="p-resume">▶ 계속하기</button>
           <button class="btn blue" id="p-look">시점 방식: ${LOOK_NAMES[g.input.lookMode]}</button>
           ${canOpenNewWindow() ? '<button class="btn" id="p-newwin">↗ 새 창에서 열기 (화면 고정 가능)</button>' : ''}
-          ${!g.world.remote ? `<button class="btn blue" id="p-host">${net.isHost ? '📡 멀티플레이 방 정보' : '🤝 친구 초대하기 (방 열기)'}</button>` : ''}
+          ${!g.world.remote ? `<button class="btn blue" id="p-host">${net.isHost ? '📡 멀티플레이 방 정보' : '🤝 이 세계를 멀티로 열기 (친구 초대)'}</button>` : ''}
+          <button class="btn blue" id="p-join">${g.world.remote ? '🌍 방 나가서 혼자 하기' : '🔗 다른 친구 방에 들어가기'}</button>
+          <button class="btn" id="p-adv">🏆 도전 과제</button>
           <button class="btn pink av-btn" id="p-avatar"><img class="av-face" id="p-face" alt="">👗 아바타 꾸미기</button>
           <button class="btn" id="p-mode">${g.player.creative ? '🛠 서바이벌로 바꾸기' : '✨ 크리에이티브로 바꾸기'}</button>
           <button class="btn" id="p-set">⚙ 설정</button>
           <button class="btn" id="p-help">📖 도움말</button>
-          ${!g.world.remote ? `<button class="btn" id="p-save">💾 저장</button>` : ''}
+          ${!g.world.remote ? `<button class="btn" id="p-save">💾 저장</button>` : `<button class="btn" id="p-copy">💾 이 세계 사본을 내 기기에 저장</button>`}
           <button class="btn red" id="p-quit">${g.world.remote ? '방 나가기' : '저장하고 메인으로'}</button>
         </div>
       </div>`);
@@ -546,10 +571,13 @@ class UI {
     this.fillFace($('#p-face', s));
     $('#p-avatar', s).onclick = () => { this.hideAll(); this.openAvatar(); };
     if ($('#p-host', s)) $('#p-host', s).onclick = () => this.showHostInfo();
+    $('#p-join', s).onclick = () => { this.modal = null; document.body.classList.remove('modal'); const remote = g.world.remote; g.quitToMenu(); if (remote) this.showWorlds(); else this.showMulti(); };
+    $('#p-adv', s).onclick = () => { if (this.showAdvancements) this.showAdvancements(() => { this.modal = null; this.openPause(); }); };
     $('#p-mode', s).onclick = () => { g.command(g.player.creative ? '/gamemode s' : '/gamemode c'); this.closeModal(); };
     $('#p-set', s).onclick = () => { this.showSettings(() => { this.modal = null; this.openPause(); }); this.modal = 'settings'; };
     $('#p-help', s).onclick = () => { this.showHelp(() => { this.modal = null; this.openPause(); }); this.modal = 'settings'; };
     if ($('#p-save', s)) $('#p-save', s).onclick = () => g.saveWorld();
+    if ($('#p-copy', s)) $('#p-copy', s).onclick = () => g.saveCopy && g.saveCopy();
     $('#p-quit', s).onclick = () => { this.modal = null; document.body.classList.remove('modal'); g.quitToMenu(); };
     this.show('menu-pause');
   }
@@ -649,7 +677,8 @@ class UI {
     const key = [p.health | 0, p.food | 0, Math.ceil(p.air / 30), p.creative, p.flying, p.armorPoints ? p.armorPoints() : 0].join();
     if (key !== this._statKey) { this._statKey = key; this.refreshStats(); }
     // 회로 정보
-    const rs = $('#rs-info');
+    const H = this._hudEls || (this._hudEls = { rs: $('#rs-info'), ch: $('#crosshair'), dbg: $('#debug'), log: $('#chat-log'), nb: $('#net-badge'), lh: $('#lock-hint'), lb: $('#look-badge'), nw: $('#newwin-btn') });
+    const rs = H.rs;
     let info = null;
     const held = p.held;
     const meter = held && ITEMS[held.id] && ITEMS[held.id].name === 'multimeter';
@@ -658,9 +687,9 @@ class UI {
       if (meter || (d && d.rs)) info = g.redstone.describe(g.target.x, g.target.y, g.target.z);
     }
     if (info) { rs.textContent = '⚡ ' + info; rs.classList.add('show'); } else rs.classList.remove('show');
-    $('#crosshair').classList.toggle('ent', !!g.targetEnt);
+    const te = !!g.targetEnt; if (te !== this._lastTE) { this._lastTE = te; H.ch.classList.toggle('ent', te); }
     // 디버그
-    const dbg = $('#debug');
+    const dbg = H.dbg;
     if (g.settings.debug) {
       dbg.classList.add('show');
       if (performance.now() - this.lastDebug > 250) {
@@ -680,17 +709,17 @@ ${t ? `바라봄 ${BLOCKS[t.id].k} (${t.x}, ${t.y}, ${t.z}) meta ${t.meta}` : ''
     } else dbg.classList.remove('show');
     // 채팅 오래된 줄
     const now = performance.now();
-    for (const d of $('#chat-log').children) if (!d.classList.contains('old') && now - d._t > 10000) d.classList.add('old');
+    if (!this._chatT || now - this._chatT > 500) { this._chatT = now; for (const d of H.log.children) if (!d.classList.contains('old') && now - d._t > 10000) d.classList.add('old'); }
     // 네트워크 표시
-    const nb = $('#net-badge');
-    if (g.net.connected) { nb.classList.add('show'); nb.textContent = g.net.isHost ? `📡 방장 · ${g.net.peerCount() + 1}명${g.net.mode === 'peer' ? ' · 코드 ' + g.net.roomCode : ''}` : `🔗 참가 중 · ${g.remotes.size + 1}명`; }
+    const nb = H.nb;
+    if (g.net.connected) { nb.classList.add('show'); const nt = g.net.isHost ? `📡 방장 · ${g.net.peerCount() + 1}명${g.net.mode === 'peer' ? ' · 코드 ' + g.net.roomCode : ''}` : `🔗 참가 중 · ${g.remotes.size + 1}명`; if (nb._t !== nt) { nb._t = nt; nb.textContent = nt; } }
     else nb.classList.remove('show');
     if (this.modal === 'container') this.refreshSlots(true);
-    const lh = $('#lock-hint'), lhOn = !g.input.touch && !g.input.locked && g.input.lookMode === 'lock' && !this.modal && !p.dead;
+    const lh = H.lh, lhOn = !g.input.touch && !g.input.locked && g.input.lookMode === 'lock' && !this.modal && !p.dead;
     lh.classList.toggle('show', lhOn);
     if (lhOn && lh._v !== VERSION) { lh._v = VERSION; lh.innerHTML = `🖱 화면을 클릭하면 마우스가 고정되고, 마우스를 움직이면 시야가 돌아가요<small>Esc 메뉴 · V 시점 방식 바꾸기 · 방향키로도 시야 회전 · ${VERSION}</small>`; }
-    const lb = $('#look-badge'); if (lb) { const t = g.input.touch ? '' : LOOK_NAMES[g.input.lookMode] + (g.input.lookMode === 'lock' ? (g.input.locked ? ' · 켜짐' : ' · 클릭하세요') : '') + ' (V) · ' + VERSION; if (lb._t !== t) { lb._t = t; lb.textContent = t; } }
-    const nw = $('#newwin-btn'); if (nw) nw.style.display = canOpenNewWindow() && !g.input.touch && !this.modal ? '' : 'none';
+    const lb = H.lb; if (lb) { const t = g.input.touch ? '' : LOOK_NAMES[g.input.lookMode] + (g.input.lookMode === 'lock' ? (g.input.locked ? ' · 켜짐' : ' · 클릭하세요') : '') + ' (V) · ' + VERSION; if (lb._t !== t) { lb._t = t; lb.textContent = t; } }
+    const nw = H.nw; if (nw) { const d = canOpenNewWindow() && !g.input.touch && !this.modal ? '' : 'none'; if (nw.style.display !== d) nw.style.display = d; }
   }
   updateNameTags(cam) {
     const g = this.g, R = g.renderer, box = $('#nametags');

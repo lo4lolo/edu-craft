@@ -12,7 +12,7 @@
 <title>에듀 크래프트</title>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-<link rel="stylesheet" href="css/style.css?v=1.0">
+<link rel="stylesheet" href="css/style.css?v=1.2">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -32,11 +32,14 @@
   <div id="look-badge"></div>
   <button id="newwin-btn" type="button" style="display:none" onclick="game.saveWorld(true);openInNewWindow()">↗ 새 창 (화면 고정)</button>
   <div id="net-badge"></div>
+  <button id="menu-btn" type="button" onclick="game.ui.openPause()" title="메뉴 (Esc)">☰ 메뉴</button>
+  <div id="xpbar"><div id="xpfill"></div><b id="xplv"></b></div>
+  <div id="gadget"></div>
   <div id="chat"><div id="chat-log"></div><input id="chat-input" maxlength="200" autocomplete="off" placeholder="메시지 또는 /명령어 입력 후 Enter"></div>
   <div id="debug"></div>
   <div id="nametags"></div>
   <div id="bot-status"></div>
-  <div id="lock-hint">🖱 화면을 클릭하면 움직일 수 있어요<small>Esc 메뉴 · E 인벤토리 · B 블록 코딩 · T 채팅</small></div>
+  <div id="lock-hint">🖱 화면을 클릭하면 움직일 수 있어요<small>Esc 메뉴 · E 인벤토리 · B 블록 코딩 · T 채팅 · L 도전 과제</small></div>
   <div id="touch-ui"></div>
 </div>
 
@@ -45,26 +48,28 @@
 <div id="cursor-item"><i></i><b></b></div>
 <div id="tooltip"></div>
 
-<script src="js/util.js?v=1.0"></script>
-<script src="js/textures.js?v=1.0"></script>
-<script src="js/blocks.js?v=1.0"></script>
-<script src="js/world.js?v=1.0"></script>
-<script src="js/redstone.js?v=1.0"></script>
-<script src="js/mesher.js?v=1.0"></script>
-<script src="js/skin.js?v=1.0"></script>
-<script src="js/renderer.js?v=1.0"></script>
-<script src="js/items.js?v=1.0"></script>
-<script src="js/player.js?v=1.0"></script>
-<script src="js/entities.js?v=1.0"></script>
-<script src="js/audio.js?v=1.0"></script>
-<script src="js/input.js?v=1.0"></script>
-<script src="js/ui.js?v=1.0"></script>
-<script src="js/survival.js?v=1.0"></script>
-<script src="js/builder.js?v=1.0"></script>
-<script src="js/avatar.js?v=1.0"></script>
-<script src="js/net.js?v=1.0"></script>
-<script src="js/game.js?v=1.0"></script>
-<script src="js/dims.js?v=1.0"></script>
+<script src="js/util.js?v=1.2"></script>
+<script src="js/textures.js?v=1.2"></script>
+<script src="js/blocks.js?v=1.2"></script>
+<script src="js/world.js?v=1.2"></script>
+<script src="js/redstone.js?v=1.2"></script>
+<script src="js/mesher.js?v=1.2"></script>
+<script src="js/skin.js?v=1.2"></script>
+<script src="js/renderer.js?v=1.2"></script>
+<script src="js/items.js?v=1.2"></script>
+<script src="js/player.js?v=1.2"></script>
+<script src="js/entities.js?v=1.2"></script>
+<script src="js/audio.js?v=1.2"></script>
+<script src="js/input.js?v=1.2"></script>
+<script src="js/ui.js?v=1.2"></script>
+<script src="js/survival.js?v=1.2"></script>
+<script src="js/builder.js?v=1.2"></script>
+<script src="js/avatar.js?v=1.2"></script>
+<script src="js/net.js?v=1.2"></script>
+<script src="js/game.js?v=1.2"></script>
+<script src="js/dims.js?v=1.2"></script>
+<script src="js/vanilla.js?v=1.2"></script>
+<script src="js/save.js?v=1.2"></script>
 <script>
   window.addEventListener('load', () => {
     if (window.__reloadingFresh) return;

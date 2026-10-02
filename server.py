@@ -50,8 +50,21 @@ class Client:
         self.writer = writer
         self.room = None
         self.name = '?'
-        self.lock = asyncio.Lock()
         self.closed = False
+        # 기기마다 따로 보내는 줄: 느린 기기 하나 때문에 다른 친구들까지 멈추지 않게
+        self.q = asyncio.Queue()
+        self.task = asyncio.ensure_future(self._writer())
+
+    async def _writer(self):
+        try:
+            while not self.closed:
+                data = await self.q.get()
+                if data is None:
+                    break
+                self.writer.write(data)
+                await self.writer.drain()
+        except Exception:
+            self.closed = True
 
     async def send(self, obj):
         if self.closed:
@@ -64,12 +77,15 @@ class Client:
             header = struct.pack('!BBH', 0x81, 126, n)
         else:
             header = struct.pack('!BBQ', 0x81, 127, n)
-        try:
-            async with self.lock:
-                self.writer.write(header + data)
-                await self.writer.drain()
-        except Exception:
+        if self.q.qsize() > 4000:
+            # 너무 밀린 기기(화면 꺼짐·연결 불량)는 끊음 → 다시 들어오면 됨
             self.closed = True
+            try:
+                self.writer.close()
+            except Exception:
+                pass
+            return
+        self.q.put_nowait(header + data)
 
 
 async def read_frame(reader):
@@ -185,11 +201,7 @@ async def websocket(reader, writer, headers):
             if op == 8:
                 break
             if op == 9:
-                try:
-                    writer.write(struct.pack('!BB', 0x8A, len(data)) + data)
-                    await writer.drain()
-                except Exception:
-                    break
+                c.q.put_nowait(struct.pack('!BB', 0x8A, len(data)) + data)
                 continue
             if op in (1, 2, 0):
                 buf += data
@@ -205,6 +217,10 @@ async def websocket(reader, writer, headers):
         pass
     finally:
         c.closed = True
+        try:
+            c.q.put_nowait(None)
+        except Exception:
+            pass
         await leave(c)
         clients.pop(c.id, None)
         try:

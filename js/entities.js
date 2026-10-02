@@ -529,20 +529,32 @@ class Particles {
 
 // ------------------ 개체 관리 ------------------
 class EntityManager {
-  constructor(game) { this.g = game; this.list = []; this.byId = new Map(); this.net = new Map(); }
+  constructor(game) { this.g = game; this.list = []; this.byId = new Map(); this.net = new Map(); this.frame = 0; }
   add(e) { this.list.push(e); this.byId.set(e.eid, e); return e; }
   update(dt) {
     const g = this.g;
+    const p = g.player;
+    this.frame = (this.frame + 1) | 0;
     for (const e of this.list) {
       if (e.dead) continue;
       if (!g.world.isLoadedAt(Math.floor(e.x), Math.floor(e.z))) continue;
       if (e.remote) { e.interp(dt); continue; }
+      // (최적화) 40칸보다 먼 몹은 4프레임에 한 번만 (모은 시간으로) 움직임
+      if (e.type === 'mob' && !(e.def && (e.def.boss || e.def.flying))) {
+        const d2 = (e.x - p.x) ** 2 + (e.z - p.z) ** 2;
+        if (d2 > 1600 && g.remotes.size === 0) {
+          e._acc = (e._acc || 0) + dt;
+          if (((this.frame + e.eid) & 3) !== 0) continue;
+          const t = Math.min(0.2, e._acc); e._acc = 0; e.update(t, g); continue;
+        }
+        e._acc = 0;
+      }
       e.update(dt, g);
     }
-    // 몹끼리/플레이어와 겹치지 않게 살짝 밀기
-    const p = g.player;
+    // 몹끼리/플레이어와 겹치지 않게 살짝 밀기 (가까운 몹만)
     for (const e of this.list) {
       if (e.dead || e.type !== 'mob' || e.remote) continue;
+      if ((e.x - p.x) ** 2 + (e.z - p.z) ** 2 > 1600) continue;
       const push = (ox, oy, oz, ow, oh, k) => {
         const dx = e.x - ox, dz = e.z - oz, min = e.w / 2 + ow / 2;
         if (Math.abs(dx) >= min || Math.abs(dz) >= min || e.y > oy + oh || e.y + e.h < oy) return;
