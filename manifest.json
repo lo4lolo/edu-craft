@@ -1,0 +1,15 @@
+{
+  "name": "에듀 크래프트",
+  "short_name": "에듀크래프트",
+  "description": "블록 코딩(빌더봇)과 서바이벌·크리에이티브, 지옥·엔드까지 즐기는 교실용 블록 샌드박스 게임",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#cfe9ff",
+  "theme_color": "#a9dcff",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

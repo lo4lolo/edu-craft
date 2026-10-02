@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#2143b8">
+<meta name="description" content="블록 코딩(빌더봇)과 서바이벌·크리에이티브, 지옥·엔드·엔더 드래곤까지 즐기는 교실용 3D 블록 게임">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>에듀 크래프트</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="css/style.css?v=1.0">
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="hud">
+  <div id="crosshair"></div>
+  <div id="rs-info"></div>
+  <div id="held-name"></div>
+  <div id="stats">
+    <div id="armor" class="bar"></div>
+    <div id="hearts" class="bar"></div>
+    <div id="food" class="bar"></div>
+    <div id="air" class="bar"></div>
+  </div>
+  <div id="hotbar"></div>
+  <div id="mode-badge"></div>
+  <div id="look-badge"></div>
+  <button id="newwin-btn" type="button" style="display:none" onclick="game.saveWorld(true);openInNewWindow()">↗ 새 창 (화면 고정)</button>
+  <div id="net-badge"></div>
+  <div id="chat"><div id="chat-log"></div><input id="chat-input" maxlength="200" autocomplete="off" placeholder="메시지 또는 /명령어 입력 후 Enter"></div>
+  <div id="debug"></div>
+  <div id="nametags"></div>
+  <div id="bot-status"></div>
+  <div id="lock-hint">🖱 화면을 클릭하면 움직일 수 있어요<small>Esc 메뉴 · E 인벤토리 · B 블록 코딩 · T 채팅</small></div>
+  <div id="touch-ui"></div>
+</div>
+
+<div id="screens"></div>
+<div id="toasts"></div>
+<div id="cursor-item"><i></i><b></b></div>
+<div id="tooltip"></div>
+
+<script src="js/util.js?v=1.0"></script>
+<script src="js/textures.js?v=1.0"></script>
+<script src="js/blocks.js?v=1.0"></script>
+<script src="js/world.js?v=1.0"></script>
+<script src="js/redstone.js?v=1.0"></script>
+<script src="js/mesher.js?v=1.0"></script>
+<script src="js/skin.js?v=1.0"></script>
+<script src="js/renderer.js?v=1.0"></script>
+<script src="js/items.js?v=1.0"></script>
+<script src="js/player.js?v=1.0"></script>
+<script src="js/entities.js?v=1.0"></script>
+<script src="js/audio.js?v=1.0"></script>
+<script src="js/input.js?v=1.0"></script>
+<script src="js/ui.js?v=1.0"></script>
+<script src="js/survival.js?v=1.0"></script>
+<script src="js/builder.js?v=1.0"></script>
+<script src="js/avatar.js?v=1.0"></script>
+<script src="js/net.js?v=1.0"></script>
+<script src="js/game.js?v=1.0"></script>
+<script src="js/dims.js?v=1.0"></script>
+<script>
+  window.addEventListener('load', () => {
+    if (window.__reloadingFresh) return;
+    try { window.game = new Game(); game.boot(); }
+    catch (e) {
+      console.error(e);
+      if (e instanceof ReferenceError && typeof reloadFresh === 'function' && reloadFresh(e.message)) return;
+      document.getElementById('screens').innerHTML = '<div class="screen show"><div class="panel"><h2>실행할 수 없어요</h2><p>' + e.message + '</p><p>Ctrl + F5 로 새로고침해 보세요. 그래도 같으면 최신 크롬/엣지/사파리에서 열어 주세요. (WebGL2 필요)</p></div></div>';
+    }
+  });
+</script>
+</body>
+</html>
