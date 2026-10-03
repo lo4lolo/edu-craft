@@ -658,3 +658,66 @@ body.hidehud #xpbar, body.hidehud #gadget { display: none; }
 #save-ind { position: absolute; right: calc(12px + env(safe-area-inset-right)); top: calc(150px + env(safe-area-inset-top)); font-size: 13px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.6); opacity: 0; pointer-events: none; }
 #save-ind.show { animation: saveFlash 1.8s ease-out; }
 @keyframes saveFlash { 0% { opacity: 0; } 15% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; } }
+
+/* v1.3 점프맵 */
+#pk-hud { position: absolute; left: 50%; top: calc(14px + env(safe-area-inset-top)); transform: translateX(-50%); display: none; align-items: center; gap: 10px; padding: 6px 14px; border-radius: 16px; background: rgba(255, 255, 255, 0.82); border: 1.5px solid #fff; box-shadow: var(--shadow); color: #3a2d55; pointer-events: auto; z-index: 4; }
+#pk-hud.show { display: flex; }
+#pk-hud b { font-size: 20px; font-variant-numeric: tabular-nums; }
+#pk-hud small { font-size: 13px; opacity: 0.8; }
+#pk-hud button { border: none; background: transparent; font-size: 14px; cursor: pointer; opacity: 0.6; }
+.cn.c-shape, .cb.c-shape { }
+
+/* v1.4 도전 과제 · 코딩 마스터 */
+.adv-panel { max-width: 920px; }
+.adv-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.adv-head h2 { margin: 0; }
+.adv-rank { font-size: 15px; margin-top: 4px; } .adv-rank small { color: var(--muted); }
+.adv-total { text-align: right; font-size: 14px; min-width: 160px; } .adv-total b { font-size: 22px; }
+.adv-bar, .ac-bar { height: 8px; border-radius: 6px; background: rgba(120, 110, 150, 0.18); overflow: hidden; margin-top: 4px; }
+.adv-bar i, .ac-bar i { display: block; height: 100%; background: linear-gradient(90deg, #7bd88f, #ffd24a); border-radius: 6px; }
+.adv-legend { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; font-size: 12.5px; }
+.tb { display: inline-block; padding: 1px 7px; border-radius: 8px; color: #fff; font-size: 11.5px; font-weight: 700; }
+.tb.t-basic { background: #5bbf6a; } .tb.t-hard { background: #4a8fe0; } .tb.t-hero { background: #9a5ae0; } .tb.t-legend { background: linear-gradient(90deg, #e0a020, #f06a8a); }
+.adv-next { background: #fff7e0; border: 1.5px solid #ffd27a; border-radius: 12px; padding: 6px 10px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.adv-next .an { border: 1.5px solid #e8d4a0; background: #fff; border-radius: 10px; padding: 3px 8px; font: inherit; font-size: 13px; cursor: pointer; }
+.adv-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 4px; }
+.adv-tabs button { border: 1.5px solid #ddd2f0; background: #faf7ff; border-radius: 10px; padding: 4px 9px; font: inherit; font-size: 13px; cursor: pointer; color: #3a2d55; }
+.adv-tabs button.on { background: #3a2d55; color: #fff; border-color: #3a2d55; } .adv-tabs button.full { box-shadow: inset 0 -3px 0 #ffd24a; }
+.adv-tabs small { opacity: 0.75; }
+.adv-chdesc { margin: 4px 0 6px; }
+.adv-card { filter: none; opacity: 1; background: #fbfaff; border: 1.5px solid #e6e0f2; cursor: pointer; align-items: flex-start; }
+.adv-card .ac-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.adv-card.locked { opacity: 0.6; } .adv-card.locked .adv-ic { filter: grayscale(1); }
+.adv-card.done { background: linear-gradient(135deg, #fff6c8, #ffe3f0); border-color: #ffd27a; cursor: default; }
+.adv-card.t-legend:not(.done) { border-color: #f0c060; background: linear-gradient(135deg, #fffaf0, #fff0f6); }
+.adv-card.t-legend.done { background: linear-gradient(135deg, #ffe38a, #ffb0d0, #b8e0ff); }
+.adv-card.pinned { outline: 3px solid #ff9ab4; }
+.adv-card .ac-tip { color: #6a5a8a; } .adv-card .ac-need { color: #c0505a; }
+.ach-banner { display: flex; gap: 10px; align-items: center; padding: 10px 16px; border-radius: 16px; background: rgba(255, 255, 255, 0.95); border: 2px solid #5bbf6a; box-shadow: var(--shadow); margin-bottom: 6px; animation: achIn 0.35s ease-out; max-width: 420px; transition: opacity 0.6s, transform 0.6s; }
+.ach-banner.out { opacity: 0; transform: translateY(-10px); }
+.ach-banner i.ic { width: 40px; height: 40px; flex: none; display: inline-block; }
+.ach-banner div { display: flex; flex-direction: column; } .ach-banner b { font-size: 17px; } .ach-banner small { font-size: 12px; opacity: 0.8; } .ach-banner span { font-size: 13px; }
+.ach-banner.t-hard { border-color: #4a8fe0; } .ach-banner.t-hero { border-color: #9a5ae0; background: linear-gradient(135deg, #fff, #f1e6ff); }
+.ach-banner.t-legend { border: 3px solid #e0a020; background: linear-gradient(135deg, #fff6c8, #ffe0f0, #e0f0ff); transform: scale(1.12); animation: achLegend 0.6s ease-out, achGlow 1.4s ease-in-out infinite; }
+@keyframes achIn { from { transform: translateY(-14px); opacity: 0; } }
+@keyframes achLegend { from { transform: scale(0.6); opacity: 0; } }
+@keyframes achGlow { 50% { box-shadow: 0 0 24px #ffd24a; } }
+#ach-pin { position: absolute; left: calc(10px + env(safe-area-inset-left)); top: calc(30px + env(safe-area-inset-top)); display: none; max-width: min(380px, 60vw); font-size: 13px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.6); pointer-events: auto; cursor: pointer; z-index: 3; }
+#ach-pin.show { display: block; } #ach-pin small { opacity: 0.9; }
+#ach-pin .ap-tag { display: inline-block; padding: 0 6px; border-radius: 6px; font-size: 11px; text-shadow: none; }
+body.hidehud #ach-pin { display: none; }
+.code-missions .cm-rank { font-size: 13px; margin: 2px 0 8px; }
+.code-missions .cm-now { background: #fff; border: 2px solid #ffd27a; border-radius: 12px; padding: 8px 10px; margin-bottom: 8px; }
+.code-missions .cm-now b { font-size: 16px; display: block; } .code-missions .cm-now p { margin: 4px 0; font-size: 13.5px; }
+.code-missions .cm-now small { color: var(--muted); }
+.code-missions .cm-lim { color: #4a6aa0; } .code-missions .cm-fb { color: #c0505a; font-weight: 700; }
+.code-missions details summary { cursor: pointer; font-size: 13px; color: #6a5a8a; }
+.code-missions .cm-ch { margin: 8px 0 2px; font-size: 13.5px; } .code-missions .cm-ch small { color: var(--muted); }
+.code-missions .cm { padding: 3px 8px; font-size: 13px; }
+.code-missions .cm.now { background: #fff1c4; font-weight: 700; } .code-missions .cm.lock { opacity: 0.5; }
+
+.low-box { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 10px; }
+.low-box small { font-size: 12px; }
+
+.code-missions .cm-badge img { width: 100%; border-radius: 10px; margin-top: 8px; box-shadow: 0 4px 14px rgba(40,20,80,0.25); }
+.code-missions .cm-badge input { border: 1.5px solid #d9c9f2; border-radius: 10px; padding: 4px 8px; font: inherit; }

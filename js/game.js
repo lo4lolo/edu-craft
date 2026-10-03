@@ -1622,7 +1622,7 @@ class Game {
       const x = cx + dx, z = cz + dz;
       const top = w.heightAt(x, z);
       const snow = BIOMES[w.biomeAt(x, z)] && (w.biomeAt(x, z) === 3 || w.biomeAt(x, z) === 6);
-      if (w.biomeAt(x, z) === 2) continue;
+      const bb = w.biomeAt(x, z); if (bb === 2 || bb === 13) continue;
       for (let k = 0; k < cnt; k++) {
         const h = hashInt(x, k, z, 5);
         const speed = snow ? 3 : 14;

@@ -8,7 +8,7 @@
 const PEERJS_URLS = ['https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js', 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'];
 const PEER_PREFIX = 'educraft-v1-';
 // 통신 규칙 번호: 서로 다른 버전(예: 웨일은 옛 버전이 캐시에, 엣지는 새 버전)이 섞이면 알려 주려고
-const NET_PROTO = 2;
+const NET_PROTO = 3;
 // 연결 길 찾기: 학교 와이파이처럼 기기끼리 바로 연결이 막힌 곳에서는 TURN 중계 서버로 우회
 const ICE_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
@@ -208,7 +208,7 @@ class Net {
         g.remotes.set(id, r);
         const mods = {};
         for (const [k, mm] of w.mods) { const a = []; for (const [i, v] of mm) a.push(i, v); mods[k] = a; }
-        this.sendTo(id, { t: 'welcome', proto: NET_PROTO, v: VERSION, id, seed: w.seed, type: w.type, mode: g.worldMode, time: w.time, rain: g.rainTarget, rules: g.worldRules, mods, be: Array.from(w.be.entries()), spawn: g.player.spawn, worldName: g.worldName });
+        this.sendTo(id, { t: 'welcome', proto: NET_PROTO, v: VERSION, gen: g.worldGen || 1, id, seed: w.seed, type: w.type, mode: g.worldMode, time: w.time, rain: g.rainTarget, rules: g.worldRules, mods, be: Array.from(w.be.entries()), spawn: g.player.spawn, worldName: g.worldName });
         // 아바타 주고받기: 새 친구에게 모두의 아바타, 모두에게 새 친구의 아바타
         this.sendTo(id, { t: 'av', id: 'host', name: g.player.name, av: avatarNet(g.avatar) });
         for (const [rid, rr] of g.remotes) if (rid !== id && rr.av) this.sendTo(id, { t: 'av', id: rid, name: rr.name, av: avatarNet(rr.av) });

@@ -5,7 +5,7 @@
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const VERSION = 'v1.2';
+const VERSION = 'v1.4';
 
 // HUD용 픽셀 아이콘 (하트/배고픔/숨)
 const HUD_ART = {
@@ -371,13 +371,30 @@ class UI {
     const s = this.screen('menu-help', `
       <div class="panel help" style="max-width:860px">
         <h2>📖 도움말</h2>
-        <div class="tabs" id="h-tabs"><button data-t="keys">조작법</button><button data-t="rs">⚡ 레드스톤</button><button data-t="ex">회로 예제</button><button data-t="code">🤖 블록 코딩</button><button data-t="survive">서바이벌</button><button data-t="vanilla">✨ 마을·마법·낚시</button><button data-t="dims">🔥 지옥과 엔드</button></div>
+        <div class="tabs" id="h-tabs"><button data-t="keys">조작법</button><button data-t="rs">⚡ 레드스톤</button><button data-t="ex">회로 예제</button><button data-t="code">🤖 블록 코딩</button><button data-t="survive">서바이벌</button><button data-t="vanilla">✨ 마을·마법·낚시</button><button data-t="nature">🐴 동물·점프맵</button><button data-t="dims">🔥 지옥과 엔드</button></div>
         <div id="h-body"></div>
         <div class="row"><span style="flex:1"></span><button class="btn primary" id="h-back">닫기</button></div>
       </div>`, this.g.state === 'play' ? '' : 'menu-bg');
     const body = $('#h-body', s);
     const icon = (name) => { const id = I(name); const n = ICON.idx[id]; return `<i class="rsi ic" style="background-position:${(n % ICON.cols) / (ICON.cols - 1) * 100}% ${Math.floor(n / ICON.cols) / (Math.max(2, Math.ceil(ICON.h / ICON.size)) - 1) * 100}%"></i>`; };
     const T = {
+      nature: `<h3>🌍 새 생물군계 (v1.3 이후 새로 만든 세계)</h3><p>정글(큰 나무·대나무·수박) · 사바나(아카시아) · 늪(수련잎·진흙) · 벚꽃 숲(분홍 나무·벌집) · 메사(줄무늬 테라코타 고원). 옛 세계는 지은 건물이 어긋나지 않게 지형을 그대로 둬요.</p>
+        <h3>🐴 동물과 아이템</h3><table>
+        <tr><td>말·기린·낙타</td><td>먹이(사과·밀·당근·황금 당근 / 아카시아 잎 / 선인장)로 길들이고 <b>안장</b>(가죽 3 + 철 1)을 얹으면 타요. W 달리기 · Space 점프 · Shift 내리기</td></tr>
+        <tr><td>🦄 유니콘</td><td>벚꽃 숲에 드물게. 황금 당근·황금 사과로 길들이면 아주 빠르고 <b>공중에서 한 번 더 점프</b>! 가위로 빗으면 <b>무지개 갈기</b> → 무지개 블록</td></tr>
+        <tr><td>🔥 불사조</td><td>메사·사막 하늘을 날아요. 가끔 <b>불사조 깃털</b>을 떨어뜨려요 → 깃털 4 + 금 주괴 = <b>불사조 토템</b>(쓰러질 때 한 번 되살아남)</td></tr>
+        <tr><td>☁ 구름 양</td><td>산에 살아요. 가위로 깎으면 <b>구름 블록</b>(떨어져도 안 다침) → 구름 4개로 <b>구름 부츠</b></td></tr>
+        <tr><td>🐉 아기 용</td><td>산·벚꽃 숲에 드물게. 황금 사과로 친구가 되면 따라다니며 몬스터에게 불꽃을 뿜어요</td></tr>
+        <tr><td>🐝 벌·벌집</td><td>꿀이 꽉 차면(5/5) 빈 병(유리 3)으로 <b>꿀병</b>, 가위로 <b>밀랍</b>. 꿀병 4 = 꿀 블록, 밀랍 + 실 = 양초, 판자 + 밀랍 = 벌통</td></tr>
+        <tr><td>🐢 거북</td><td>해변에서 가끔 <b>껍데기 조각</b> → 5개로 <b>거북 투구</b>(물속에서 숨이 안 줄어요)</td></tr>
+        <tr><td>🐼 판다 · 🐸 개구리</td><td>판다는 대나무를 좋아하고 재채기로 <b>슬라임 볼</b>을! 늪의 개구리도 슬라임 볼 → 점프 발판 재료</td></tr>
+        <tr><td>🐻‍❄️ 북극곰 · 🐧 펭귄 · 🦜 앵무새</td><td>북극곰은 건드리면 화내요(물고기). 펭귄에게 물고기를 주면 깃털 선물. 앵무새는 씨앗으로 친구가 돼요</td></tr></table>
+        <h3>🏃 점프맵</h3><table>
+        <tr><td>출발·도착 발판</td><td>출발을 밟으면 ⏱ 시작, 도착에서 기록 (코스마다 1~5등, <code>/parkour</code>)</td></tr>
+        <tr><td>체크포인트 · 되돌림 블록</td><td>떨어지거나 보라 블록에 닿으면 마지막 체크포인트로 (다치지 않아요)</td></tr>
+        <tr><td>점프·대시 발판</td><td>높이 뛰기 / 바라보는 쪽으로 쌩!</td></tr>
+        <tr><td>부서지는 발판 · 깜빡이 A/B</td><td>밟으면 잠시 뒤 사라짐 / 2초마다 A와 B가 번갈아 나타남</td></tr>
+        <tr><td>빌더봇 「점프맵 만들기」</td><td>발판 수와 난이도(1~4)만 정하면 코스를 지어 줘요. 예제 「🏃 점프맵 코스」</td></tr></table>`,
       vanilla: `<h3>✨ 원작 마인크래프트 요소</h3><table>
         <tr><td>경험치</td><td>광석을 캐고, 몹을 물리치고, 화로에서 구우면 초록 구슬이 나와요. 단축바 위 초록 막대가 차면 레벨이 올라요.</td></tr>
         <tr><td>마법 부여대</td><td>책 + 다이아몬드 2 + 흑요석 4. 도구·갑옷·낚싯대를 넣고 청금석과 레벨을 써서 효율·날카로움·보호·내구성·바다의 행운을 걸어요.</td></tr>
@@ -471,7 +488,7 @@ class UI {
         <tr><td>④ 되돌리기</td><td>↶ 되돌리기를 누르면 마지막 실행으로 지은 것이 사라져요.</td></tr>
         <tr><td>👁 미리보기</td><td>짓기 전에 생길 자리를 파란 테두리로 보여 주고, 서바이벌이면 <b>필요한 재료</b>를 계산해 줘요. 「▶ 이대로 짓기」로 바로 지어요.</td></tr>
         <tr><td>👣 한 단계씩</td><td>블록 하나씩 멈추며 실행해요. 오른쪽 창의 「다음 ▶」을 누를 때마다 한 걸음! (실행 중 ⏸ 로도 멈출 수 있어요)</td></tr>
-        <tr><td>🏅 코딩 도전</td><td>반복·만약·함수·무작위 같은 블록을 써서 12가지 도전을 깨 보세요.</td></tr></table>
+        <tr><td>🎓 코딩 마스터</td><td>차례대로 → 반복 → 변수 → 조건 → 함수 → 마스터, 6장 22단계. 빌더봇이 실제로 지은 모양을 검사하고, 모자란 점을 알려 줘요. 장을 깨면 빌더봇 색이 바뀌어요.</td></tr></table>
         <h3>새 블록 (v1.1)</h3><table>
         <tr><td>만약 ~이면 / 아니면</td><td>앞·아래·위에 블록이 있는지, 물인지, 낮·밤, 동전 던지기, 또는 <code>i % 2 == 0</code> 같은 식으로 갈라져요.</td></tr>
         <tr><td>~이(가) 될 때까지 반복 · 계속 반복</td><td>조건이 맞을 때까지 / 멈출 때까지 되풀이해요. 「코드 멈추기」로 끝낼 수 있어요.</td></tr>

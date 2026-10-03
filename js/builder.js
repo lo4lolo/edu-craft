@@ -217,7 +217,7 @@ class Builder {
           <button class="btn small" id="cd-save">저장</button>
           <button class="btn small" id="cd-new">새로</button>
           <button class="btn small" id="cd-io">내보내기/가져오기</button>
-          <button class="btn small" id="cd-mis">🏅 코딩 도전 <b id="cd-misn"></b></button>
+          <button class="btn small" id="cd-mis">🎓 코딩 마스터 <b id="cd-misn"></b></button>
           <span style="flex:1"></span>
           <button class="btn small" id="cd-close">✕ 닫기</button>
         </div>
@@ -503,6 +503,7 @@ class Builder {
     this.funcs = {}; this.collectFuncs(this.program);
     this.stats = { used: new Set(), placed: 0, colorSet: new Set(), calls: 0, randExpr: false };
     this.curNode = null; this.waitT = 0;
+    this.rngSeed = pv && pv.seed ? pv.seed : 1 + (Math.random() * 1e9 | 0); this.rng = mulberry32(this.rngSeed);
   }
   collectFuncs(list) {
     for (const n of list || []) {
@@ -527,17 +528,18 @@ class Builder {
     const lk = this.lockedIn(this.program);
     if (lk.size) { this.log('🔒 아직 열리지 않은 블록이 있어요: ' + [...lk].map(t => `「${codeName(t)}」`).join(', ')); return; }
     this.begin(null);
-    const anchor = { sx: this.sx, sy: this.sy, sz: this.sz, facing: this.facing };
+    const anchor = { sx: this.sx, sy: this.sy, sz: this.sz, facing: this.facing, seed: this.rngSeed };
     this.dry = new Map();
     const gen = this.runList(this.program);
     let steps = 0, err = null, cut = false;
     const t0 = performance.now();
+    const mr = Math.random; Math.random = this.rng;
     try {
       for (;;) {
         const r = gen.next(); if (r.done) break;
         if (++steps > 400000 || this.dry.size > 60000 || performance.now() - t0 > 1500) { cut = true; break; }
       }
-    } catch (e) { if (!(e && e.botStop)) err = e; }
+    } catch (e) { if (!(e && e.botStop)) err = e; } finally { Math.random = mr; }
     const cells = this.dry; this.dry = null;
     if (err) { this.log('🤖 코드 오류: ' + (err.message || err)); return; }
     const w = g.world, need = new Map();
@@ -636,12 +638,15 @@ class Builder {
     while (steps < budget && performance.now() - t0 < 12) {
       steps++;
       let r;
+      const mr = Math.random; Math.random = this.rng;
       try { r = this.gen.next(); } catch (e) {
+        Math.random = mr;
         if (e && e.botStop) { this.finishRun(); this.log('「코드 멈추기」 블록에서 멈췄어요'); return; }
         if (e && e.botOut) { this.g.ui.chatLine(`🤖 빌더봇: ${itemName(e.botOut)}이(가) 다 떨어졌어요! 가방에 더 모아 오면 이어서 지을 수 있어요. (${this.placed}칸 지음)`, '#ffb37a'); this.g.ui.toast(`🤖 ${itemName(e.botOut)}이(가) 부족해요`); }
         else this.g.ui.chatLine('🤖 코드 오류: ' + (e.message || e), '#f88');
         this.stop(); return;
       }
+      Math.random = mr;
       if (r.done) { this.finishRun(); return; }
       if (this.waitT > 0) break;
     }

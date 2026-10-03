@@ -236,6 +236,8 @@ function defineBlocks() {
   defineSurvivalBlocks();
   if (typeof defineDimBlocks === 'function') defineDimBlocks();
   if (typeof defineVanillaBlocks === 'function') defineVanillaBlocks();
+  if (typeof defineNatureBlocks === 'function') defineNatureBlocks();
+  if (typeof defineParkourBlocks === 'function') defineParkourBlocks();
   // 설명 기본값
   for (const d of BLOCKS) if (d) {
     if (!d.tex && !d.texf) d.tex = faces('stone');

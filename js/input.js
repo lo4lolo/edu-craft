@@ -261,6 +261,7 @@ class Input {
     s.moveF = clamp(f, -1, 1); s.moveS = clamp(st, -1, 1);
     s.jump = !!k.Space || this.tJump;
     s.sneak = !!(k.ShiftLeft || k.ShiftRight) || this.tSneak || this.tFlyDown;
+    s.sneakPress = this.ev.sneakPress;   // 수레·동물에서 내리기 (예전에는 전달이 안 돼서 Shift로 못 내렸음)
     s.sprint = !!(k.ControlLeft || k.ControlRight) || this.sprintLatch || (this.joy.id !== null && this.joy.dy < -0.92);
     s.autoJump = this.touch && this.g.settings.autoJump !== false;
     if (this.tBreak) s.attack = true;

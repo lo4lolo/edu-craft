@@ -63,6 +63,7 @@ function defineItems() {
   defineSurvivalItems();
   if (typeof defineDimItems === 'function') defineDimItems();
   if (typeof defineVanillaItems === 'function') defineVanillaItems();
+  if (typeof defineNatureItems === 'function') defineNatureItems();
   for (const d of ITEMS) if (d && d.tex && !d.block && TEX.byName[d.tex] === undefined) d.tex = 'stick';
 }
 
@@ -160,6 +161,8 @@ function defineRecipes() {
   defineSurvivalRecipes();
   if (typeof defineDimRecipes === 'function') defineDimRecipes();
   if (typeof defineVanillaRecipes === 'function') defineVanillaRecipes();
+  if (typeof defineNatureRecipes === 'function') defineNatureRecipes();
+  if (typeof defineParkourRecipes === 'function') defineParkourRecipes();
   // 이름 → id 변환
   const res = (k) => k.startsWith('#') ? GROUPS[k.slice(1)] : [I(k)];
   for (const r of RECIPES) {
@@ -226,6 +229,7 @@ function defineSmelting() {
   defineSurvivalSmelting();
   if (typeof defineDimSmelting === 'function') defineDimSmelting();
   if (typeof defineVanillaSmelting === 'function') defineVanillaSmelting();
+  if (typeof defineNatureSmelting === 'function') defineNatureSmelting();
 }
 
 // ---------------- 아이콘 시트 ----------------

@@ -207,7 +207,7 @@ function villagePlan(w, rx, rz) {
       const x = rx * VILLAGE_REGION + 40 + ((h0 >> 8) & 127) * (VILLAGE_REGION - 80) / 127 | 0;
       const z = rz * VILLAGE_REGION + 40 + ((h0 >> 15) & 127) * (VILLAGE_REGION - 80) / 127 | 0;
       const c0 = w.column(x, z);
-      if ((c0.biome === 7 || c0.biome === 2 || c0.biome === 8) && c0.h > SEA + 1 && c0.h < 100) {
+      if ((c0.biome === 7 || c0.biome === 2 || c0.biome === 8 || c0.biome === 10 || c0.biome === 12) && c0.h > SEA + 1 && c0.h < 100) {
         let lo = c0.h, hi = c0.h;
         for (const [ox, oz] of [[12, 0], [-12, 0], [0, 12], [0, -12], [9, 9], [-9, 9], [9, -9], [-9, -9]]) { const h = w.column(x + ox, z + oz).h; lo = Math.min(lo, h); hi = Math.max(hi, h); }
         if (hi - lo <= 6 && lo > SEA) plan = makeVillage(w, x, c0.h, z, c0.biome === 2, h0);

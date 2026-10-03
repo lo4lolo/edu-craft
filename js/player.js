@@ -4,22 +4,26 @@
 // =====================================================================
 
 // 월드에서 AABB 와 겹치는 충돌 상자 모으기
+// (최적화) 상자 배열을 매번 새로 만들지 않고 out._pool 에서 다시 씀 — 몹·아이템이 많을 때 프레임마다 수천 개씩 만들던 것
 function collectBoxes(world, x0, y0, z0, x1, y1, z1, out) {
-  out.length = 0;
+  const pool = out._pool || (out._pool = []);
+  let n = 0;
   const bx0 = Math.floor(x0), by0 = Math.floor(y0) - 1, bz0 = Math.floor(z0);
   const bx1 = Math.floor(x1), by1 = Math.floor(y1), bz1 = Math.floor(z1);
   for (let x = bx0; x <= bx1; x++) for (let z = bz0; z <= bz1; z++) {
-    if (!world.isLoadedAt(x, z)) { out.push([x, -64, z, x + 1, 512, z + 1]); continue; }
+    if (!world.isLoadedAt(x, z)) { const r = pool[n] || (pool[n] = [0, 0, 0, 0, 0, 0]); r[0] = x; r[1] = -64; r[2] = z; r[3] = x + 1; r[4] = 512; r[5] = z + 1; out[n++] = r; continue; }
     for (let y = by0; y <= by1; y++) {
       const id = world.getBlock(x, y, z); if (!id) continue;
       const d = BLOCKS[id]; if (!d.solid) continue;
-      const bs = blockBoxes(id, world.getMeta(x, y, z), false, world, x, y, z);
+      const bs = IS_OPAQUE[id] ? FULL_BOX : blockBoxes(id, world.getMeta(x, y, z), false, world, x, y, z);
       if (!bs) continue;
-      for (const b of bs) out.push([x + b[0], y + b[1], z + b[2], x + b[3], y + b[4], z + b[5]]);
+      for (const b of bs) { const r = pool[n] || (pool[n] = [0, 0, 0, 0, 0, 0]); r[0] = x + b[0]; r[1] = y + b[1]; r[2] = z + b[2]; r[3] = x + b[3]; r[4] = y + b[4]; r[5] = z + b[5]; out[n++] = r; }
     }
   }
+  out.length = n;
   return out;
 }
+const MOVE_ZERO = [0, 0, 0];
 
 // 이동 가능한 AABB 개체 (플레이어, 몹, 아이템 공용)
 class Body {
@@ -32,6 +36,14 @@ class Body {
   aabb() { const r = this.w / 2; return [this.x - r, this.y, this.z - r, this.x + r, this.y + this.h, this.z + r]; }
   // 축별 이동 + 충돌. 반환: 실제 이동량
   move(world, dx, dy, dz, sneakGuard) {
+    // (최적화) 가만히 서 있는 개체: 발밑이 꽉 찬 블록이면 충돌 계산을 건너뜀
+    if (this.onGround && dy <= 0 && dy > -0.6 && dx * dx + dz * dz < 1e-7 && !sneakGuard) {
+      const fy = Math.round(this.y);
+      if (Math.abs(this.y - fy) < 1e-4) {
+        const id = world.getBlock(Math.floor(this.x), fy - 1, Math.floor(this.z));
+        if (IS_OPAQUE[id]) { this.vy = 0; this.hitV = true; this.hitH = false; if (Math.abs(this.vx) < 0.003) this.vx = 0; if (Math.abs(this.vz) < 0.003) this.vz = 0; return MOVE_ZERO; }
+      }
+    }
     const r = this.w / 2;
     let a = [this.x - r, this.y, this.z - r, this.x + r, this.y + this.h, this.z + r];
     const boxes = collectBoxes(world, Math.min(a[0], a[0] + dx) - 1, Math.min(a[1], a[1] + dy) - 1, Math.min(a[2], a[2] + dz) - 1,

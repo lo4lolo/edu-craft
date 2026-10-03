@@ -289,7 +289,7 @@ const isTouchDevice = () => {
 // 예전 index.html + 새 js 파일이 섞여 "○○ is not defined" 오류가 날 수 있어요.
 // 필요한 기능이 모두 읽혔는지 확인하고, 빠졌으면 주소에 ?r=시각 을 붙여 한 번만 새로 불러와요.
 // ---------------------------------------------------------------------
-const REQUIRED_GLOBALS = ['buildSurvivalTextures', 'Survival', 'Game', 'defineDimBlocks', 'defineVanillaBlocks', 'packFile', 'compileExpr'];
+const REQUIRED_GLOBALS = ['buildSurvivalTextures', 'Survival', 'Game', 'defineDimBlocks', 'defineVanillaBlocks', 'packFile', 'compileExpr', 'defineNatureBlocks', 'PK', 'ACH_LIST', 'CM_LIST'];
 function reloadFresh(reason) {
   try {
     if (sessionStorage.getItem('educraft.freshReload') === '1') return false;   // 한 번만
