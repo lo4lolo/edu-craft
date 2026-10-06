@@ -72,18 +72,21 @@ class ItemEntity extends Entity {
   }
   render(g, R, cam) {
     const mesh = g.itemMesh(this.item.id);
-    const m = M4.create(), t = M4.create();
+    const m = M4.tmp(), t = M4.tmp();
     const bob = Math.sin(this.age * 3) * 0.06 + 0.15;
     M4.translate(m, this.x - cam[0], this.y + bob - cam[1], this.z - cam[2]);
     M4.mul(m, m, M4.rotY(t, this.spin));
     const sc = mesh.flat ? 0.45 : 0.28;
-    const sm = M4.create(); sm[0] = sm[5] = sm[10] = sc; M4.mul(m, m, sm);
+    const sm = M4.identity(M4.tmp()); sm[0] = sm[5] = sm[10] = sc; M4.mul(m, m, sm);
     const L = this.lightAt(g.world);
     const n = this.item.n > 16 ? 3 : this.item.n > 1 ? 2 : 1;
+    // (최적화) 그릴 때 쓰는 행렬·항목은 개체마다 한 번 만들어 돌려 씀
+    const E = this._be || (this._be = [0, 1, 2].map(() => ({ mesh: null, model: new Float32Array(16), light: null })));
     for (let i = 0; i < n; i++) {
-      const mm = new Float32Array(m);
+      const e = E[i], mm = e.model; mm.set(m);
       if (i) { mm[12] += 0.06 * i; mm[13] += 0.04 * i; mm[14] += 0.05 * i; }
-      g.frame.blockEnts.push({ mesh, model: mm, light: L });
+      e.mesh = mesh; e.light = L;
+      g.frame.blockEnts.push(e);
     }
   }
 }
@@ -101,10 +104,12 @@ class TNTEntity extends Entity {
   }
   render(g, R, cam) {
     const mesh = g.blockMesh(BL.tnt, 0);
-    const m = M4.create(); M4.translate(m, this.x - cam[0], this.y + 0.49 - cam[1], this.z - cam[2]);
+    const e = this._be || (this._be = { mesh: null, model: new Float32Array(16), light: null, flash: 0 });
+    const m = e.model; M4.translate(m, this.x - cam[0], this.y + 0.49 - cam[1], this.z - cam[2]);
     const sw = this.fuse < 10 ? 1 + (10 - this.fuse) / 10 * 0.2 : 1;
-    const sm = M4.create(); sm[0] = sm[5] = sm[10] = sw; M4.mul(m, m, sm);
-    g.frame.blockEnts.push({ mesh, model: m, light: this.lightAt(g.world), flash: (Math.floor(this.fuse / 5) % 2) ? 0.6 : 0 });
+    const sm = M4.identity(M4.tmp()); sm[0] = sm[5] = sm[10] = sw; M4.mul(m, m, sm);
+    e.mesh = mesh; e.light = this.lightAt(g.world); e.flash = (Math.floor(this.fuse / 5) % 2) ? 0.6 : 0;
+    g.frame.blockEnts.push(e);
   }
 }
 
@@ -124,8 +129,10 @@ class FallingBlock extends Entity {
   }
   render(g, R, cam) {
     const mesh = g.blockMesh(this.block, 0);
-    const m = M4.create(); M4.translate(m, this.x - cam[0], this.y + 0.49 - cam[1], this.z - cam[2]);
-    g.frame.blockEnts.push({ mesh, model: m, light: this.lightAt(g.world) });
+    const e = this._be || (this._be = { mesh: null, model: new Float32Array(16), light: null });
+    M4.translate(e.model, this.x - cam[0], this.y + 0.49 - cam[1], this.z - cam[2]);
+    e.mesh = mesh; e.light = this.lightAt(g.world);
+    g.frame.blockEnts.push(e);
   }
 }
 
@@ -186,7 +193,7 @@ class ArrowEntity extends Entity {
     if (this.inWater) { this.vx *= 0.9; this.vy *= 0.9; this.vz *= 0.9; }
   }
   render(g, R, cam) {
-    const m = M4.create(), t = M4.create();
+    const m = M4.tmp(), t = M4.tmp();
     M4.translate(m, this.x - cam[0], this.y - cam[1], this.z - cam[2]);
     M4.mul(m, m, M4.rotY(t, this.yaw)); M4.mul(m, m, M4.rotX(t, this.pitch));
     const L = this.lightAt(g.world);
@@ -298,7 +305,7 @@ class Minecart extends Entity {
     if (sp > 1) for (const e of g.ents.list) if (e.type === 'mob' && Math.abs(e.x - this.x) < 0.8 && Math.abs(e.z - this.z) < 0.8 && Math.abs(e.y - this.y) < 1) { e.vx += this.vx * 0.5; e.vz += this.vz * 0.5; e.vy = 4; }
   }
   render(g, R, cam) {
-    const m = M4.create(), t = M4.create();
+    const m = M4.tmp(), t = M4.tmp();
     M4.translate(m, this.x - cam[0], this.y - cam[1], this.z - cam[2]);
     M4.mul(m, m, M4.rotY(t, this.yaw));
     const L = this.lightAt(g.world);
@@ -400,13 +407,14 @@ class Mob extends Entity {
 
 function renderMobModel(R, sub, x, y, z, yaw, walk, L, hurt, fuse) {
   const sheared = sub === 'sheep_s'; if (sheared) sub = 'sheep';
-  const base = M4.create(), t = M4.create();
+  // (최적화) 잠깐 쓰는 행렬은 돌려 쓰는 임시 행렬(M4.tmp)로
+  const base = M4.tmp(), t = M4.tmp();
   M4.translate(base, x, y, z); M4.mul(base, base, M4.rotY(t, yaw));
-  if (fuse > 0) { const s = 1 + fuse * 0.15; const sm = M4.create(); sm[0] = sm[10] = s; sm[5] = 1 + fuse * 0.05; M4.mul(base, base, sm); }
+  if (fuse > 0) { const s = 1 + fuse * 0.15; const sm = M4.identity(M4.tmp()); sm[0] = sm[10] = s; sm[5] = 1 + fuse * 0.05; M4.mul(base, base, sm); }
   const sw = Math.sin(walk) * 0.7;
   const tint = (c) => hurt ? [Math.min(1, c[0] * 1.2 + 0.4), c[1] * 0.5, c[2] * 0.5] : (fuse > 0 && (Math.floor(fuse * 8) % 2) ? [1, 1, 1] : c);
   const box = (m, x0, y0, z0, x1, y1, z1, c) => R.ent.addBox(m, x0, y0, z0, x1, y1, z1, tint(c), L[0], L[1]);
-  const limb = (px, py, pz, ang) => { const m = new Float32Array(base); const tr = M4.create(); M4.translate(tr, px, py, pz); M4.mul(m, m, tr); M4.mul(m, m, M4.rotX(t, ang)); return m; };
+  const limb = (px, py, pz, ang) => { const m = M4.copyTmp(base); const tr = M4.tmp(); M4.translate(tr, px, py, pz); M4.mul(m, m, tr); M4.mul(m, m, M4.rotX(t, ang)); return m; };
   const P = 1 / 16;
   if (sub === 'pig' || sub === 'cow' || sub === 'sheep') {
     const isCow = sub === 'cow', isSheep = sub === 'sheep';
@@ -460,7 +468,7 @@ function renderHumanoid(R, base, t, sw, skin, shirt, pants, th, armsForward, L, 
   const P = 1 / 16;
   const tint = (c) => hurt ? [Math.min(1, c[0] * 1.2 + 0.4), c[1] * 0.5, c[2] * 0.5] : c;
   const box = (m, x0, y0, z0, x1, y1, z1, c) => R.ent.addBox(m, x0, y0, z0, x1, y1, z1, tint(c), L[0], L[1]);
-  const limb = (px, py, pz, ax, az) => { const m = new Float32Array(base); const tr = M4.create(); M4.translate(tr, px, py, pz); M4.mul(m, m, tr); M4.mul(m, m, M4.rotX(t, ax)); if (az) M4.mul(m, m, M4.rotZ(t, az)); return m; };
+  const limb = (px, py, pz, ax, az) => { const m = M4.copyTmp(base); const tr = M4.tmp(); M4.translate(tr, px, py, pz); M4.mul(m, m, tr); M4.mul(m, m, M4.rotX(t, ax)); if (az) M4.mul(m, m, M4.rotZ(t, az)); return m; };
   box(base, -4 * P, 12 * P, -2 * P, 4 * P, 24 * P, 2 * P, shirt);
   for (const [lx, ph] of [[-2 * P, sw], [2 * P, -sw]]) { const m = limb(lx, 12 * P, 0, ph); box(m, -th, -12 * P, -th, th, 0, th, pants); }
   const armA = armsForward ? -1.5 : 0;
@@ -516,12 +524,15 @@ class Particles {
       const s = p.size;
       const L = world.getLight(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z));
       const sky = (L >> 4) * 17, blk = Math.max((L & 15) * 17, p.emissive ? 255 : 0);
-      const t = p.tint ? [p.tint[0] * 170 | 0, p.tint[1] * 170 | 0, p.tint[2] * 170 | 0] : [170, 170, 170];
+      // (최적화) 파티클마다 배열을 만들지 않음
+      const t0 = p.tint ? p.tint[0] * 170 | 0 : 170, t1 = p.tint ? p.tint[1] * 170 | 0 : 170, t2 = p.tint ? p.tint[2] * 170 | 0 : 170;
       const cx = p.x - cam[0], cy = p.y - cam[1], cz = p.z - cam[2];
       const u0 = p.u, v0 = p.v, u1 = p.u + 0.25, v1 = p.v + 0.25;
       const fl = 3 | (p.emissive ? 32 : 0);
-      const pts = [[-1, -1, u0, v1], [1, -1, u1, v1], [1, 1, u1, v0], [-1, 1, u0, v0]];
-      for (const [a, c, u, v] of pts) b.vert(cx + (rx * a + ux * c) * s, cy + uy * c * s, cz + (rz * a + uz * c) * s, u, v, p.layer, fl, sky, blk, 255, 0, t[0], t[1], t[2]);
+      for (let k = 0; k < 4; k++) {
+        const a = k === 0 || k === 3 ? -1 : 1, c = k < 2 ? -1 : 1, u = a < 0 ? u0 : u1, v = c < 0 ? v1 : v0;
+        b.vert(cx + (rx * a + ux * c) * s, cy + uy * c * s, cz + (rz * a + uz * c) * s, u, v, p.layer, fl, sky, blk, 255, 0, t0, t1, t2);
+      }
     }
     return b;
   }

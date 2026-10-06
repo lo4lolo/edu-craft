@@ -714,9 +714,10 @@ function renderNatureMob(R, sub, x, y, z, yaw, walk, L, hurt, e) {
       if (b && ITEMS[b.id] && ITEMS[b.id].name === 'cloud_boots') return false;
       if (g && g.world) { const id = g.world.getBlock(Math.floor(this.x), Math.floor(this.y - 0.05), Math.floor(this.z)); if (id === BL.cloud_block || id === BL.honey_block) return false; if (id === BL.hay_block) amount *= 0.2; }
     }
-    if (!this.creative && !this.dead && this.invul <= 0 && amount >= this.health && this.count(I('phoenix_totem')) > 0) {
+    const offTotem = !!(this.offhand && this.offhand.id === I('phoenix_totem'));
+    if (!this.creative && !this.dead && this.invul <= 0 && amount >= this.health && (offTotem || this.count(I('phoenix_totem')) > 0)) {
       const r = _hurt.call(this, Math.max(0, this.health - 1), src, kx, kz);
-      this.take(I('phoenix_totem'), 1);
+      if (offTotem) this.offhand = null; else this.take(I('phoenix_totem'), 1);
       this.health = 12; this.invul = 2; this.fallDist = 0;
       const g = this.game;
       if (g) {

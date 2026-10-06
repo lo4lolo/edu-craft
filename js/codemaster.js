@@ -250,7 +250,7 @@ const BOT_RANK = [
     M4.mul(m, m, M4.rotY(t, { 2: 0, 3: Math.PI, 4: Math.PI / 2, 5: -Math.PI / 2 }[b.f] || 0));
     const rk = BOT_RANK[b.rank !== undefined ? b.rank : this.rankNow()] || BOT_RANK[0];
     const body = rk.body || [0.5 + 0.5 * Math.sin(tm * 2), 0.5 + 0.5 * Math.sin(tm * 2 + 2.1), 0.5 + 0.5 * Math.sin(tm * 2 + 4.2)];
-    const lit = !rk.body || rk === BOT_RANK[3] || rk === BOT_RANK[5];
+    const lit = !rk.body || rk.k === '골드' || rk.k === '다이아';
     const L = lit ? [1, 0.6] : [1, 0.3];
     R.ent.addBox(m, -0.28, -0.2, -0.25, 0.28, 0.3, 0.25, body, L[0], L[1]);
     R.ent.addBox(m, -0.22, -0.08, -0.27, 0.22, 0.2, -0.25, [0.1, 0.15, 0.2], 1, 0.3);
@@ -261,7 +261,7 @@ const BOT_RANK = [
     R.ent.addBox(m, -0.36, -0.12, -0.08, -0.28, 0.12, 0.08, body.map(v => v * 0.6), L[0], L[1]);
     R.ent.addBox(m, 0.28, -0.12, -0.08, 0.36, 0.12, 0.08, body.map(v => v * 0.6), L[0], L[1]);
     R.ent.addBox(m, -0.14, -0.35, -0.12, 0.14, -0.2, 0.12, [0.3, 0.8, 1], 1, 1);
-    if (rk.k === '전설 🌈' || rk === BOT_RANK[5]) R.ent.addBox(m, -0.2, 0.62, -0.03, 0.2, 0.66, 0.03, [1, 0.9, 0.4], 1, 1);   // 왕관 막대
+    if (rk.k === '전설 🌈' || rk.k === '다이아') R.ent.addBox(m, -0.2, 0.62, -0.03, 0.2, 0.66, 0.03, [1, 0.9, 0.4], 1, 1);   // 왕관 막대
   };
   // 등급은 3초마다만 다시 읽음 (그리기·네트워크가 매 프레임 부르므로)
   B.rankNow = function () { const now = performance.now(); if (this._rank === undefined || now > (this._rankT || 0)) { this._rankT = now + 3000; this._rank = cmChaptersDone(); } return this._rank; };
@@ -303,7 +303,7 @@ async function cmBadgeCanvas(g, name) {
   c.fillStyle = '#ffffff'; c.font = `700 34px ${FONT}`; c.fillText('C O D I N G   M A S T E R', W / 2, 290);
   // 메달 + 아바타
   const cx = W / 2, cy = 560, R = 205;
-  for (let i = 0; i < 12; i++) { c.beginPath(); c.fillStyle = RB[i % 6]; c.moveTo(cx, cy); c.arc(cx, cy, R + 34, i / 12 * Math.PI * 2 - Math.PI / 2, (i + 1) / 12 * Math.PI * 2 - Math.PI / 2); c.fill(); }
+  for (let i = 0; i < 6; i++) { c.beginPath(); c.fillStyle = RB[i]; c.arc(cx, cy, R + 36 - i * 6, 0, Math.PI * 2); c.fill(); }
   c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); const mg = c.createRadialGradient(cx, cy - 60, 20, cx, cy, R); mg.addColorStop(0, '#fff8d8'); mg.addColorStop(1, '#ffd36a'); c.fillStyle = mg; c.fill();
   c.lineWidth = 10; c.strokeStyle = '#fff'; c.stroke();
   let av = g.avatar; if (av) ensureAvatarPixels(av); if (!av || !av.pixels) av = g.fallbackAvatar();
@@ -317,14 +317,14 @@ async function cmBadgeCanvas(g, name) {
   c.fillStyle = '#fff'; let fs = 64; c.font = `800 ${fs}px ${FONT}`; while (c.measureText(name).width > 520 && fs > 30) { fs -= 4; c.font = `800 ${fs}px ${FONT}`; }
   c.fillText(name, cx, cy + R + 62);
   // 설명
-  c.fillStyle = '#fff'; c.font = `700 40px ${FONT}`; c.fillText('6장 22단계를 모두 해냈어요!', cx, 935);
-  c.fillStyle = 'rgba(255,255,255,0.78)'; c.font = `500 28px ${FONT}`; c.fillText('빌더봇 블록 코딩으로 반복 · 변수 · 조건 · 함수 · 재귀까지', cx, 985);
+  c.fillStyle = '#fff'; c.font = `700 40px ${FONT}`; c.fillText(`${CM_CHAPTERS.length}장 ${CM_LIST.length}단계를 모두 해냈어요!`, cx, 935);
+  c.fillStyle = 'rgba(255,255,255,0.78)'; c.font = `500 28px ${FONT}`; c.fillText('블록 코딩과 글자 코딩으로 반복 · 변수 · 조건 · 함수 · 신호 · 목록까지', cx, 985);
   // 장 칩
-  const chips = CM_CHAPTERS.map(x => x[0]), cw = 150, gap = 14, x0 = cx - (chips.length * cw + (chips.length - 1) * gap) / 2;
+  const chips = CM_CHAPTERS.map(x => x[0]), gap = 10, cw = Math.min(150, Math.floor((W - 120 - (chips.length - 1) * gap) / chips.length)), x0 = cx - (chips.length * cw + (chips.length - 1) * gap) / 2;
   chips.forEach((t, i) => {
     const x = x0 + i * (cw + gap), y = 1035;
-    c.fillStyle = RB[i]; c.beginPath(); if (c.roundRect) c.roundRect(x, y, cw, 64, 18); else c.rect(x, y, cw, 64); c.fill();
-    c.fillStyle = '#1d2350'; c.font = `800 26px ${FONT}`; c.fillText('✓ ' + t, x + cw / 2, y + 33);
+    c.fillStyle = RB[i % RB.length]; c.beginPath(); if (c.roundRect) c.roundRect(x, y, cw, 64, 18); else c.rect(x, y, cw, 64); c.fill();
+    c.fillStyle = '#1d2350'; let cf = 26; c.font = `800 ${cf}px ${FONT}`; while (c.measureText('✓ ' + t).width > cw - 10 && cf > 15) { cf -= 2; c.font = `800 ${cf}px ${FONT}`; } c.fillText('✓ ' + t, x + cw / 2, y + 33);
   });
   // 날짜·확인 번호
   const d = cmDoneDate();
@@ -335,7 +335,7 @@ async function cmBadgeCanvas(g, name) {
   return cv;
 }
 async function cmBadgeDownload(g, name) {
-  if (cmLoad().size < CM_LIST.length) { g.ui.toast('코딩 마스터 22단계를 모두 깨면 받을 수 있어요'); return; }
+  if (cmLoad().size < CM_LIST.length) { g.ui.toast(`코딩 마스터 ${CM_LIST.length}단계를 모두 깨면 받을 수 있어요`); return; }
   try {
     const cv = await cmBadgeCanvas(g, name);
     const blob = await new Promise(res => cv.toBlob(res, 'image/png'));

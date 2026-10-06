@@ -6,8 +6,10 @@ const SETTINGS_KEY = 'educraft.settings.v1';
 const DEFAULT_SETTINGS = {
   quality: 2, renderDist: 6, fov: 75, sens: 1, lookMode: 'auto', volume: 0.7, clouds: true, autoJump: true, viewBob: true,
   hideHud: false, debug: false, renderScale: 1, fancyLeaves: true, name: '', skin: 0, touchSize: 1, showRs: true, brightness: 0.3, showFlow: true,
-  treeFell: true, veinMine: true, autoRefill: true, minimap: true, autoQuality: true,
+  treeFell: true, veinMine: true, autoRefill: true, minimap: true, autoQuality: true, fpsCap: 0,
 };
+// 💻 크롬북(저사양) 맞춤: 그림자 없음, 시야 4, 해상도 70%, 화면 배율 1, 30fps 제한 (처음 켤 때 크롬북·메모리 4GB 이하면 자동)
+const CHROMEBOOK_PRESET = { quality: 0, renderDist: 4, renderScale: 0.7, dprCap: 1, fpsCap: 30, fancyLeaves: false, clouds: false, autoQuality: true };
 const SFX_LOCAL = new Set(['hurt', 'pop', 'eat', 'burp', 'bow', 'dig', 'step', 'break', 'place', 'break_tool']);
 const SKINS = [[0.2, 0.55, 0.85], [0.85, 0.3, 0.3], [0.3, 0.7, 0.35], [0.9, 0.7, 0.2], [0.6, 0.35, 0.8], [0.95, 0.5, 0.7], [0.25, 0.25, 0.28], [0.95, 0.95, 0.95]];
 
@@ -39,6 +41,7 @@ const DB = {
   del(id) { return this.tx('readwrite', st => st.delete(id)); },
 };
 
+const SEL_EDGES = [0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7];   // 상자 모서리 12개 (꼭짓점 번호 쌍)
 const ITEM_MESH3D = new Set(['cube', 'slab', 'stairs', 'chest', 'cactus', 'farmland', 'piston', 'daylight', 'fence', 'diode', 'torch', 'lever', 'button', 'plate', 'trapdoor', 'endframe', 'egg']);
 function objToMods(o) {
   if (o instanceof Map) return o;
@@ -60,6 +63,10 @@ class Game {
     let firstRun = true; try { firstRun = !localStorage.getItem(SETTINGS_KEY); } catch (e) { }
     if (isTouchDevice() && firstRun) { this.settings.quality = 1; this.settings.renderDist = 4; this.settings.renderScale = 0.75; }
     this.firstRun = firstRun;
+    // 크롬북(ChromeOS) 또는 메모리 4GB 이하 → 처음부터 크롬북 맞춤 설정
+    this.isChromebook = /\bCrOS\b/.test(navigator.userAgent || '');
+    const mem = navigator.deviceMemory;
+    if (firstRun && (this.isChromebook || (mem && mem <= 4))) { this.firstLow = true; Object.assign(this.settings, CHROMEBOOK_PRESET); }
     if (!this.settings.name) this.settings.name = '플레이어' + (1 + Math.random() * 999 | 0);
     // 내 아바타
     const avs = loadAvatarStore();
@@ -113,7 +120,10 @@ class Game {
     this.minimap = new Minimap(this);
     this.net = new Net(this);
     if (this.firstRun && !isTouchDevice()) this.guessLowEnd();
+    if (this.firstLow) Object.assign(this.settings, CHROMEBOOK_PRESET);   // 추측이 더 높게 잡아도 크롬북 맞춤 유지
     this.applySettings();
+    // 메시 작업자: boot 를 감싼 다른 파일의 블록 정의까지 끝난 뒤에 시작
+    setTimeout(() => this.startMeshPool(), 0);
     this.ui.showMain();
     this.state = 'menu';
     requestAnimationFrame(t => this.loop(t));
@@ -128,6 +138,7 @@ class Game {
     this.renderer.quality = s.quality;
     this.renderer.renderScale = s.renderScale;
     this.renderer.maxDpr = s.quality >= 3 || isTouchDevice() ? 2 : 1;
+    if (s.dprCap > 0) this.renderer.maxDpr = Math.min(this.renderer.maxDpr, s.dprCap);   // 크롬북: 고해상도 화면이라도 배율 1
     const ss = s.quality >= 3 ? 4096 : s.quality >= 2 ? 2048 : 1024;
     if (ss !== this.renderer.shadowSize) this.renderer.setupShadow(ss);
     this.renderer.fbW = 0;
@@ -145,7 +156,7 @@ class Game {
     const rec = opt.rec;
     const seed = rec ? rec.seed : opt.client ? opt.client.seed : opt.seed;
     const type = rec ? rec.type : opt.client ? opt.client.type : opt.type;
-    const dim = rec && rec.dim || 'overworld';
+    const dim = rec && rec.dim || opt.client && opt.client.dim || 'overworld';
     this.world = new World(seed, type, dim);
     this.worldName = rec ? rec.name : opt.name;
     this.worldMode = rec ? rec.mode : opt.client ? opt.client.mode : opt.mode;
@@ -157,7 +168,7 @@ class Game {
     this.dimStore = { overworld: null, nether: null, end: null };
     this.dragon = Object.assign({ dead: false, hp: null, crystals: null, ended: false }, rec && rec.dragon || {});
     this.found = new Set(rec && rec.found || []);
-    this.portalT = 0; this.portalCD = 0; this.pendingArrive = null;
+    this.portalT = 0; this.portalCD = 0; this.pendingArrive = null; this.dimSpawn = null; this.party = null;
     if (rec) {
       w.time = rec.time || 1000;
       const dims = rec.dims || {};
@@ -192,6 +203,9 @@ class Game {
       this.pendingSpawn = false;
     } else if (opt.client) {
       p.x = opt.client.spawn[0]; p.y = opt.client.spawn[1]; p.z = opt.client.spawn[2]; p.spawn = opt.client.spawn.slice();
+      // 방장이 지옥·엔드에 있으면 그 차원의 도착 지점으로
+      this.dimSpawn = opt.client.dimSpawn || null;
+      if (this.dimSpawn) { p.x = this.dimSpawn[0]; p.y = this.dimSpawn[1]; p.z = this.dimSpawn[2]; }
       p.creative = opt.client.mode === 'creative';
       this.pendingSpawn = false;
       this.giveStarter();
@@ -273,22 +287,55 @@ class Game {
   loop(t) {
     requestAnimationFrame(tt => this.loop(tt));
     this.lastRaf = performance.now();
+    // 프레임 제한 (설정 30/60fps, 메뉴가 열려 있으면 더 드물게) — 남는 rAF 는 건너뜀
+    const iv = this.frameInterval();
+    if (iv > 0 && this._lastFrameT !== undefined) {
+      const el = t - this._lastFrameT;
+      if (el < iv - 2) return;                                           // 2ms 여유: rAF 간격이 들쭉날쭉해도 30이 20으로 떨어지지 않게
+      this._lastFrameT = el < iv * 2 ? this._lastFrameT + iv : t;          // 일정한 박자 (평균이 딱 제한값)
+    } else this._lastFrameT = t;
     this.frameStep(t);
     this.autoTune(t);
   }
-  // 느린 노트북: 3초씩 재서 두 번 연속 38fps 아래면 화질을 한 단계 낮춤 (설정 「느려지면 화질 자동으로 낮추기」)
+  // 프레임 사이 최소 간격(ms). 0 = 제한 없음
+  frameInterval() {
+    const cap = +this.settings.fpsCap || 0;
+    let iv = cap > 0 ? 1000 / cap : 0;
+    if (this.state === 'play' && this.ui && this.ui.modal) {
+      // 일시정지·설정(세계가 멈춤) 10fps, 가방·상자 등 다른 창 30fps
+      const paused = !(this.net && this.net.connected) && (this.ui.modal === 'pause' || this.ui.modal === 'settings');
+      iv = Math.max(iv, paused ? 100 : 1000 / 30);
+    }
+    return iv;
+  }
+  // 목표 fps (제한이 있으면 그 값)
+  targetFps() { const cap = +this.settings.fpsCap || 0; return cap > 0 ? Math.min(cap, 60) : 60; }
+  // 느린 노트북: 3초씩 재서 두 번 연속 목표보다 많이 느리면 화질을 한 단계 낮춤 (설정 「느려지면 화질 자동으로 낮추기」)
+  //  - 60fps 목표: 38 아래, 30fps 제한: 24 아래
+  //  - 낮춘 뒤 30초 넘게 목표 fps 를 여유 있게 지키면 한 단계 되돌림. 되돌린 뒤 1분 안에 다시 느려지면 그 뒤로는 안 올림 (오락가락 방지)
   // rAF 프레임만 잼 — 보조 타이머(20fps)로 돌 때 잘못 낮추지 않게
   autoTune(t) {
     const now = performance.now();
     if (this.state !== 'play' || this.settings.autoQuality === false || this.ui.modal || document.hidden || now - (this.playStart || 0) < 8000) { this._at = null; return; }
-    const a = this._at || (this._at = { t0: t, n: 0 });
-    a.n++;
+    const a = this._at || (this._at = { t0: t, n: 0, work: 0 });
+    a.n++; a.work += this._workMs || 0;
     const sec = (t - a.t0) / 1000;
     if (sec < 3) return;
-    const fps = (a.n - 1) / sec; this._at = null;
-    if (fps >= 38) { this._slowN = 0; return; }
+    const fps = (a.n - 1) / sec, work = a.work / a.n; this._at = null;
+    const target = this.targetFps(), capped = (+this.settings.fpsCap || 0) > 0;
+    if (fps >= (capped ? target * 0.8 : 38)) {
+      this._slowN = 0;
+      const U = this._atUndo;
+      if (U && U.length && !this._atNoUp && fps >= target * 0.95 && work < 1000 / target * 0.45) {
+        if (++this._fastN >= 10) { this._fastN = 0; this._atUpT = now; this.tuneRestore(U.pop()); this.ui.toast('🐇 이제 빨라져서 화질을 한 단계 다시 올렸어요', 3000); }
+      } else this._fastN = 0;
+      return;
+    }
+    this._fastN = 0;
     if (++this._slowN < 2) return;
     this._slowN = 0;
+    if (this._atUpT && now - this._atUpT < 60000) this._atNoUp = true;
+    this.tuneSnap();
     const s = this.settings;
     const steps = [
       [() => s.quality >= 3, () => s.quality = 2],
@@ -301,10 +348,24 @@ class Game {
       [() => s.renderScale > 0.5, () => s.renderScale = 0.5],
     ];
     const st = steps.find(x => x[0]());
-    if (!st) return;
+    if (!st) { this._atUndo.pop(); return; }
     st[1]();
     this.applySettings();
     this.ui.toast('🐢 화면이 느려서 화질을 한 단계 낮췄어요 (설정에서 바꿀 수 있어요)', 3500);
+  }
+  // 자동으로 낮추기 전 설정을 기억 (되돌릴 때 씀)
+  tuneSnap() {
+    const s = this.settings, U = this._atUndo || (this._atUndo = []);
+    U.push({ quality: s.quality, renderDist: s.renderDist, renderScale: s.renderScale, fancyLeaves: s.fancyLeaves, clouds: s.clouds });
+    if (U.length > 12) U.shift();
+  }
+  tuneRestore(o) {
+    if (!o) return;
+    const s = this.settings, leaves = s.fancyLeaves !== o.fancyLeaves, rd = s.renderDist !== o.renderDist;
+    Object.assign(s, o);
+    if (rd) this._order = null;
+    this.applySettings();
+    if (leaves && this.world) for (const c of this.world.chunks.values()) c.dirty = true;
   }
   // rAF 가 멈춘 환경(미리보기 창 등)을 위한 보조 타이머
   watchdog() {
@@ -314,6 +375,11 @@ class Game {
     }, 50);
   }
   frameStep(t) {
+    const w0 = performance.now();
+    this._frameStep(t);
+    this._workMs = performance.now() - w0;   // 이번 프레임 메인 스레드 일 (자동 화질용)
+  }
+  _frameStep(t) {
     let dt = (t - this.lastTime) / 1000; this.lastTime = t;
     if (dt > 0.1) dt = 0.1; if (dt < 0) dt = 0;
     this.fpsAcc += dt; this.fpsN++;
@@ -358,6 +424,7 @@ class Game {
       else this.ui.onPlayStart();
       if (!this.input.touch) this.input.requestLock();
       this.lastSave = performance.now();
+      if (this.firstLow && !this._lowTold) { this._lowTold = true; this.ui.toast('💻 크롬북에 맞게 가볍게 시작했어요 (설정 ⚙에서 바꿀 수 있어요)', 4000); }
     }
   }
   update(dt) {
@@ -433,36 +500,67 @@ class Game {
     const t0 = performance.now();
     const R = this.settings.renderDist;
     const pcx = Math.floor(p.x / 16), pcz = Math.floor(p.z / 16);
-    // 1) 급한 메시 (블록 편집)
+    if (!this.meshPool) this.startMeshPool();
+    const pool = this.meshPool.ok ? this.meshPool : null, hidden = document.hidden;
+    // 0) 작업자가 끝낸 메시를 GPU 에 올림
+    if (pool && !hidden) pool.drain(t0 + budgetMs * 0.4);
+    // 1) 급한 메시 (블록 편집): 내가 방금 놓거나 부순 곳은 바로 메인에서 (놓자마자 보이게).
+    //    나머지(물 흐름·회로·빌더봇 등) 근처 변화는 작업자에게 먼저 맡김
+    const mine = !pool || performance.now() - (this._editT || -1e9) < 400;
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       const c = w.getChunk(pcx + dx, pcz + dz);
-      if (c && c.urgent && c.state >= 2 && this.neighborsReady(c)) { c.urgent = false; this.meshChunk(c); }
+      if (!c || !c.urgent || c.state < 2 || !this.neighborsReady(c)) continue;
+      if (mine) { c.urgent = false; this.meshChunk(c); }
+      else if (!c.meshing && pool.send(c)) c.urgent = false;
     }
-    // 2) 생성 & 빛 (가까운 순)
+    // 2) 생성 & 빛 (가까운 순): 다음 일이 예산을 넘길 것 같으면 다음 프레임으로 (예상 시간은 최근 평균).
+    //    한 번에 예산을 넘긴 무거운 일 뒤에는 넘긴 만큼 다음 프레임들을 쉬어서 끊김이 몰리지 않게 (빚)
     if (!this._order || this._orderR !== R) {
       this._orderR = R; this._order = [];
       for (let dz = -R - 1; dz <= R + 1; dz++) for (let dx = -R - 1; dx <= R + 1; dx++) if (dx * dx + dz * dz <= (R + 1.5) * (R + 1.5)) this._order.push([dx, dz, dx * dx + dz * dz]);
       this._order.sort((a, b) => a[2] - b[2]);
     }
-    for (const [dx, dz] of this._order) {
-      if (performance.now() - t0 > budgetMs * 0.5) break;
-      const cx = pcx + dx, cz = pcz + dz;
-      let c = w.getChunk(cx, cz);
-      if (!c) { c = new Chunk(cx, cz); w.chunks.set(ckey(cx, cz), c); }
-      if (c.state === 0) w.generate(c);
-      if (c.state === 1) { w.initLight(c); this.onChunkLoaded(c); }
+    const gb = budgetMs * 0.5, E = this._genEst || (this._genEst = { gen: 3, light: 1.5 }), playing = this.state === 'play';
+    if (playing && this._chunkDebt > 0) this._chunkDebt = Math.max(0, this._chunkDebt - gb);
+    else {
+      let did = 0;
+      for (const [dx, dz] of this._order) {
+        const el = performance.now() - t0;
+        if (el > gb) break;
+        const cx = pcx + dx, cz = pcz + dz;
+        let c = w.getChunk(cx, cz);
+        if (c && c.state >= 2) {
+          // 나눠 하는 빛 퍼뜨리기 이어서 (시간이 다 되면 멈췄다가 다음 프레임에)
+          if (c._lightJob) { w.continueLight(c, t0 + gb); did++; }
+          continue;
+        }
+        if (did && el + (c && c.state === 1 ? E.light : E.gen) > gb) break;
+        if (!c) { c = new Chunk(cx, cz); w.chunks.set(ckey(cx, cz), c); }
+        if (c.state === 0) { const a = performance.now(); w.generate(c); E.gen = E.gen * 0.8 + (performance.now() - a) * 0.2; did++; }
+        if (c.state === 1) {
+          const el2 = performance.now() - t0;
+          if (did && el2 + E.light > gb) break;
+          const a = performance.now(); w.initLight(c, true); this.onChunkLoaded(c); E.light = E.light * 0.8 + (performance.now() - a) * 0.2; did++;
+          w.continueLight(c, t0 + gb);
+        }
+        const over = performance.now() - t0 - gb;
+        if (over > 0) { if (playing) this._chunkDebt = over; break; }
+      }
     }
-    // 3) 메시
-    for (const [dx, dz, d2] of this._order) {
+    // 3) 메시: 작업자가 있으면 맡기고(자리가 없으면 그만), 없으면 메인에서 (숨긴 창은 안 함)
+    if (!hidden) for (const [dx, dz, d2] of this._order) {
       if (performance.now() - t0 > budgetMs) break;
       if (d2 > (R + 0.5) * (R + 0.5)) continue;
       const c = w.getChunk(pcx + dx, pcz + dz);
-      if (!c || c.state < 2 || !c.dirty) continue;
+      if (!c || c.state < 2 || !c.dirty || c.meshing) continue;
       if (!this.neighborsReady(c)) continue;
-      this.meshChunk(c);
+      if (pool) { if (!pool.send(c)) break; }
+      else this.meshChunk(c);
     }
-    // 4) 멀리 있는 청크 내리기
-    if (w.tick % 40 === 0) {
+    // 4) 멀리 있는 청크 내리기 (2초마다 — 틱 번호로 고르면 느린 기기에서 건너뛸 수 있어서)
+    const nowU = performance.now();
+    if (nowU - (this._unloadT || 0) > 2000) {
+      this._unloadT = nowU;
       const UR = R + 3;
       for (const [k, c] of w.chunks) {
         const dx = c.cx - pcx, dz = c.cz - pcz;
@@ -477,13 +575,20 @@ class Game {
   }
   neighborsReady(c) {
     const w = this.world;
-    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) { const n = w.getChunk(c.cx + dx, c.cz + dz); if (!n || n.state < 2) return false; }
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) { const n = w.getChunk(c.cx + dx, c.cz + dz); if (!n || n.state < 2 || n._lightJob) return false; }   // 빛을 아직 퍼뜨리는 중이면 기다림
     return true;
   }
   meshChunk(c) {
     const arrays = this.mesher.build(this.world, c);
     c.dirty = false; c.urgent = false;
+    c.meshing = false; c._mj = 0;   // 작업자에게 맡겨 둔 게 있으면 그 결과는 버림 (이게 더 새것)
     this.renderer.uploadChunk(c, arrays);
+  }
+  // 메시 작업자 시작 (안 되면 그대로 메인 스레드에서 만듦)
+  startMeshPool() {
+    if (this.meshPool) return;
+    this.meshPool = new MeshPool(this);
+    this.meshPool.start();
   }
   onChunkLoaded(c) {
     this.redstone.onChunkLoaded(c);
@@ -755,6 +860,7 @@ class Game {
   // 로컬 적용 + (참가자면) 호스트로 전송
   setBlockNet(x, y, z, id, meta) {
     const w = this.world;
+    this._editT = performance.now();   // 내 편집 → 메시를 바로 메인에서 (manageChunks 1)
     if (w.remote) {
       w.setBlock(x, y, z, id, meta);
       this.net.send({ t: 'set', b: [x, y, z, id, meta] });
@@ -787,6 +893,7 @@ class Game {
   }
   playerUse(hit, s, fresh) {
     const p = this.player, w = this.world;
+    this._editT = performance.now();   // 놓기·문·레버 → 메시를 바로 메인에서
     const held = p.held, hd = held ? ITEMS[held.id] : null;
     // 꾹 누르고 있을 때는 블록 놓기만 반복 (레버 깜빡임 방지)
     if (!fresh) {
@@ -1493,7 +1600,7 @@ class Game {
   }
   render(dt) {
     const p = this.player, w = this.world, R = this.renderer;
-    this.frame.blockEnts = [];
+    this.frame.blockEnts.length = 0;   // (최적화) 배열을 매 프레임 새로 만들지 않음
     // 카메라
     let cam = [p.x, p.eyeY(), p.z];
     let yaw = p.yaw, pitch = p.pitch;
@@ -1555,13 +1662,15 @@ class Game {
     if (this.target && !this.settings.hideHud && this.view === 0) {
       const t = this.target;
       const bs = blockBoxes(t.id, t.meta, true, w, t.x, t.y, t.z) || FULL_BOX;
-      sel = [];
+      // (최적화) 테두리 선 배열을 돌려 씀
+      sel = this._selBuf || (this._selBuf = []); sel.length = 0;
+      const C = this._selC || (this._selC = new Float32Array(24));
       for (const b of bs) {
         const e = 0.002;
         const x0 = t.x + b[0] - e - cam[0], y0 = t.y + b[1] - e - cam[1], z0 = t.z + b[2] - e - cam[2];
         const x1 = t.x + b[3] + e - cam[0], y1 = t.y + b[4] + e - cam[1], z1 = t.z + b[5] + e - cam[2];
-        const c = [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]];
-        for (const [a, bb] of [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]]) sel.push(...c[a], ...c[bb]);
+        for (let k = 0; k < 8; k++) { C[k * 3] = (k === 1 || k === 2 || k === 5 || k === 6) ? x1 : x0; C[k * 3 + 1] = k >= 4 ? y1 : y0; C[k * 3 + 2] = (k === 2 || k === 3 || k === 6 || k === 7) ? z1 : z0; }
+        for (let k = 0; k < 24; k++) { const a = SEL_EDGES[k] * 3; sel.push(C[a], C[a + 1], C[a + 2]); }
       }
     }
     // 비
@@ -1579,10 +1688,16 @@ class Game {
       if (held) { const m = this.itemMesh(held.id); hand = { mesh: m, flat: !!m.flat, light, swing: sw, bob: hb, equip: this.equip }; }
       else hand = { mesh: null, light, swing: sw, bob: hb, skin: [0.87, 0.67, 0.53], av: this.avatar && this.avatar.pixels ? this.avatar : null };
     }
+    // 보조 손(왼손)
+    let offhand = null;
+    if (hand && p.offhand && ITEMS[p.offhand.id]) {
+      const sh = isShieldId(p.offhand.id), om = sh ? null : this.itemMesh(p.offhand.id);
+      offhand = { shield: sh, mesh: om, flat: !!(om && om.flat), light: hand.light, bob: hand.bob, blocking: !!p.blocking };
+    }
     const skyLightBoost = this.settings.brightness !== undefined ? this.settings.brightness : 0.3;
     R.render({
       world: w, cam, yaw, pitch, fov: this.settings.fov * (p.sprinting ? 1.1 : 1) * (this.bowT > 0 ? 1 - Math.min(1, this.bowT) * 0.15 : 1), renderDist: this.settings.renderDist,
-      time: performance.now() / 1000, blockEnts: this.frame.blockEnts, particles: parts, crack, selLines: sel, hand, underwater,
+      time: performance.now() / 1000, blockEnts: this.frame.blockEnts, particles: parts, crack, selLines: sel, hand, offhand, underwater,
       clouds: this.settings.clouds && w.dim === 'overworld', rain: w.dim === 'overworld' ? this.rain : 0, rainBuf, bob, hurt: this.hurtFx, bright: skyLightBoost,
       fogScale: w.dim === 'nether' ? 0.62 : 0, extraLines: this.builder.prev ? this.builder.prev.lines : null,
     });
@@ -1609,6 +1724,7 @@ class Game {
     const pose = { sw, headPitch: -p.pitch * 0.8, extraSwing: p.swingAnim || (p === this.player ? (this.swing > 0 ? 1 - this.swing : 0) : 0), time: performance.now() / 1000, speed: spd, walk };
     const AM = renderAvatarModel(R.skin, R.ent, base, pose, av, R.skinLayerFor(av), light, false);
     renderArmorModel(R.ent, AM, p === this.player ? p.armor.map(a => a && a.id) : p.armor, light, false);
+    if (this.drawOffhandModel) this.drawOffhandModel(p, AM, base, light);
   }
   buildRain(cam) {
     const b = this.rainBuf || (this.rainBuf = new MeshBuf(4096)); b.reset();
@@ -1621,8 +1737,10 @@ class Game {
       if (dx * dx + dz * dz > R * R) continue;
       const x = cx + dx, z = cz + dz;
       const top = w.heightAt(x, z);
-      const snow = BIOMES[w.biomeAt(x, z)] && (w.biomeAt(x, z) === 3 || w.biomeAt(x, z) === 6);
       const bb = w.biomeAt(x, z); if (bb === 2 || bb === 13) continue;
+      const snow = bb === 3 || bb === 6;
+      // (최적화) 색 배열을 빗방울마다 만들지 않음
+      const c0 = snow ? 255 : 110, c1 = snow ? 255 : 130, c2 = snow ? 255 : 170;
       for (let k = 0; k < cnt; k++) {
         const h = hashInt(x, k, z, 5);
         const speed = snow ? 3 : 14;
@@ -1632,15 +1750,14 @@ class Game {
         const px = x + ((h >> 10) & 255) / 255, pz = z + ((h >> 18) & 255) / 255;
         const len = snow ? 0.08 : 0.6, wdt = snow ? 0.08 : 0.02;
         const rx = px - cam[0], ry = y - cam[1], rz = pz - cam[2];
-        const col = snow ? [255, 255, 255] : [110, 130, 170];
-        b.vert(rx - wdt, ry, rz, 0, 1, layer, 3, 255, 0, 255, 0, col[0], col[1], col[2]);
-        b.vert(rx + wdt, ry, rz, 1, 1, layer, 3, 255, 0, 255, 0, col[0], col[1], col[2]);
-        b.vert(rx + wdt, ry + len, rz, 1, 0, layer, 3, 255, 0, 255, 0, col[0], col[1], col[2]);
-        b.vert(rx - wdt, ry + len, rz, 0, 0, layer, 3, 255, 0, 255, 0, col[0], col[1], col[2]);
-        b.vert(rx, ry, rz - wdt, 0, 1, layer, 3, 255, 0, 255, 0, col[0], col[1], col[2]);
-        b.vert(rx, ry, rz + wdt, 1, 1, layer, 3, 255, 0, 255, 0, col[0], col[1], col[2]);
-        b.vert(rx, ry + len, rz + wdt, 1, 0, layer, 3, 255, 0, 255, 0, col[0], col[1], col[2]);
-        b.vert(rx, ry + len, rz - wdt, 0, 0, layer, 3, 255, 0, 255, 0, col[0], col[1], col[2]);
+        b.vert(rx - wdt, ry, rz, 0, 1, layer, 3, 255, 0, 255, 0, c0, c1, c2);
+        b.vert(rx + wdt, ry, rz, 1, 1, layer, 3, 255, 0, 255, 0, c0, c1, c2);
+        b.vert(rx + wdt, ry + len, rz, 1, 0, layer, 3, 255, 0, 255, 0, c0, c1, c2);
+        b.vert(rx - wdt, ry + len, rz, 0, 0, layer, 3, 255, 0, 255, 0, c0, c1, c2);
+        b.vert(rx, ry, rz - wdt, 0, 1, layer, 3, 255, 0, 255, 0, c0, c1, c2);
+        b.vert(rx, ry, rz + wdt, 1, 1, layer, 3, 255, 0, 255, 0, c0, c1, c2);
+        b.vert(rx, ry + len, rz + wdt, 1, 0, layer, 3, 255, 0, 255, 0, c0, c1, c2);
+        b.vert(rx, ry + len, rz - wdt, 0, 0, layer, 3, 255, 0, 255, 0, c0, c1, c2);
       }
     }
     return b;

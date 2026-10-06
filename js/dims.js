@@ -395,6 +395,7 @@ class Fireball extends Entity {
       if (id && BLOCKS[id].solid) { this.impact(g, this.x, this.y, this.z); return; }
       this.x = nx; this.y = ny; this.z = nz;
       if (!p.dead && Math.abs(p.x - nx) < 0.65 && ny > p.y - 0.2 && ny < p.y + 1.9 && Math.abs(p.z - nz) < 0.65) { this.impact(g, nx, ny, nz, p); return; }
+      for (const r of g.remotes.values()) if (Math.abs(r.x - nx) < 0.65 && ny > r.y - 0.2 && ny < r.y + 1.9 && Math.abs(r.z - nz) < 0.65) { this.impact(g, nx, ny, nz, r); return; }
     }
     if (Math.random() < 0.5) g.particles.smoke(this.x, this.y, this.z, 1, this.kind === 'dragon' ? [0.8, 0.3, 1] : [1, 0.55, 0.15]);
   }
@@ -560,7 +561,8 @@ class EnderDragon extends Mob {
     let nd = 48 * 48;
     for (const e of g.ents.list) if (e.sub === 'end_crystal' && !e.dead) { const d2 = (e.x - this.x) ** 2 + (e.y - this.y) ** 2 + (e.z - this.z) ** 2; if (d2 < nd) { nd = d2; this.beam = e; } }
     if (this.beam && this.healT <= 0) { this.healT = 0.5; this.hp = Math.min(MOB_TYPES.ender_dragon.hp, this.hp + 1); }
-    const tgt = !p.dead && !p.creative ? p : null;
+    let tgt = null, tb = Infinity;
+    for (const q of g.allPlayers()) { if (q.dead || q.creative) continue; const d2 = (q.x - this.x) ** 2 + (q.z - this.z) ** 2; if (d2 < tb) { tb = d2; tgt = q; } }
     let tx, ty, tz, sp = 13;
     this.phaseT -= dt;
     const pd = tgt ? Math.hypot(tgt.x - this.x, tgt.y + 1 - this.y - 1.5, tgt.z - this.z) : 99;
@@ -621,7 +623,7 @@ class EnderDragon extends Mob {
     this.hitCd -= dt;
     if (tgt && this.hitCd <= 0 && Math.abs(tgt.x - this.x) < 2.8 && Math.abs(tgt.z - this.z) < 2.8 && tgt.y + 1.6 > this.y && tgt.y < this.y + 3) {
       const l = Math.hypot(tgt.x - this.x, tgt.z - this.z) || 1;
-      g.hurtPlayer(tgt, 5, 'dragon', (tgt.x - this.x) / l * 1.5, (tgt.z - this.z) / l * 1.5); tgt.vy = 9; this.hitCd = 1.2;
+      g.hurtPlayer(tgt, 5, 'dragon', (tgt.x - this.x) / l * 1.5, (tgt.z - this.z) / l * 1.5); if (tgt === p) tgt.vy = 9; this.hitCd = 1.2;
     }
     if (this.y < top - 20) this.y = top + 20;
     if (g.dragon) g.dragon.hp = this.hp;
@@ -767,7 +769,6 @@ function renderDragon(R, e, cam, L) {
 // ---------------- 게임: 차원 이동 ----------------
 const DIM_NAMES = { overworld: '평소 세계', nether: '지옥', end: '엔드' };
 Game.prototype.travelTo = function (dim, x, y, z, arrive, label) {
-  if (this.net.connected) { this.ui.toast('🤝 함께 하기 중에는 다른 차원으로 갈 수 없어요', 3000); this.portalCD = 3; return false; }
   const old = this.world, p = this.player;
   if (this.builder.running) this.builder.stop();
   this.builder.visible = false; this.builder.updateStatus();
@@ -932,7 +933,7 @@ Game.prototype.checkEndPortal = function (x, y, z) {
 // 엔드에 들어오면 드래곤과 수정을 불러냄
 Game.prototype.onDimReady = function () {
   const w = this.world, D = this.dragon;
-  if (w.dim !== 'end' || D.dead) return;
+  if (w.dim !== 'end' || D.dead || w.remote) return;
   if (this.ents.list.some(e => e.sub === 'ender_dragon' && !e.dead)) return;
   if (!D.crystals) D.crystals = END_PILLARS.map(() => true);
   END_PILLARS.forEach((P, i) => { if (D.crystals[i]) this.ents.add(new EndCrystal(i, P.x + 0.5, P.h + 2, P.z + 0.5)); });
@@ -998,10 +999,10 @@ Game.prototype.dimTick = function (dt) {
   } else { this.portalT = Math.max(0, this.portalT - dt * 2); if (this.portalT === 0) this._portalHum = false; }
   hud.fx.style.opacity = Math.min(0.85, this.portalT / 3 * 0.9).toFixed(2);
   // 엔더 드래곤 체력바
-  let boss = null;
-  if (w.dim === 'end') for (const e of this.ents.list) if (e.sub === 'ender_dragon' && !e.dead) { boss = e; break; }
+  let boss = null, f = 0, left = 0;
+  if (w.dim === 'end' && w.remote) { const nb = this._netBoss; if (nb && nb.f >= 0 && performance.now() - nb.t < 3000) { boss = true; f = nb.f; left = nb.left; } }
+  else if (w.dim === 'end') for (const e of this.ents.list) if (e.sub === 'ender_dragon' && !e.dead) { boss = e; f = Math.max(0, e.hp / MOB_TYPES.ender_dragon.hp); left = (this.dragon.crystals || []).filter(Boolean).length; break; }
   if (boss) {
-    const f = Math.max(0, boss.hp / MOB_TYPES.ender_dragon.hp), left = (this.dragon.crystals || []).filter(Boolean).length;
     const key = (f * 200 | 0) + ':' + left;
     if (hud.bossKey !== key) { hud.bossKey = key; hud.boss.classList.add('show'); hud.bossFill.style.width = (f * 100).toFixed(1) + '%'; hud.bossTxt.textContent = `엔더 드래곤 · 수정 ${left}개 남음`; }
   } else if (hud.bossKey) { hud.bossKey = null; hud.boss.classList.remove('show'); }

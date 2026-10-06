@@ -800,11 +800,15 @@ UI.prototype.openTrade = function (mob) {
   // 방패
   const _hurt = P.hurt;
   P.hurt = function (amount, src, kx, kz) {
-    if (this.blocking && !this.creative && (src === 'mob' || src === 'arrow' || src === 'explosion' || src === 'fireball' || src === 'dragon')) {
+    // 막기는 바라보는 쪽(앞)에서 온 공격만 (밀려나는 방향의 반대쪽에 공격한 것이 있음)
+    let front = true;
+    if (kx !== undefined && (kx || kz)) { const kl = Math.hypot(kx, kz) || 1, fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw); front = (-kx / kl) * fx + (-kz / kl) * fz > 0.15; }
+    if (this.blocking && front && !this.creative && (src === 'mob' || src === 'arrow' || src === 'explosion' || src === 'fireball' || src === 'fire' || src === 'dragon')) {
       if (this.invul > 0) return false;
       const g = this.game; this.invul = 0.5;
-      if (g) { g.sound.play('shield', this.x, this.y + 1, this.z); }
-      const sh = this.held; if (sh) { sh.d = (sh.d || 0) + 1; if (sh.d >= ITEMS[sh.id].dur) { this.inv[this.sel] = null; this.blocking = false; if (g) g.sfx('break_tool', this.x, this.y + 1, this.z); } if (g) g.ui.refreshHotbar(); }
+      if (g) { g.sound.play('shield', this.x, this.y + 1, this.z); if (g.stats) g.stats.blocks = (g.stats.blocks || 0) + 1; }
+      const mainSh = this.held && ITEMS[this.held.id].name === 'shield', sh = mainSh ? this.held : this.offhand;
+      if (sh) { sh.d = (sh.d || 0) + 1; if (sh.d >= ITEMS[sh.id].dur) { if (mainSh) this.inv[this.sel] = null; else this.offhand = null; this.blocking = false; if (g) g.sfx('break_tool', this.x, this.y + 1, this.z); } if (g) g.ui.refreshHotbar(); }
       if (kx !== undefined) { this.vx += kx * 2; this.vz += kz * 2; }
       if (src !== 'explosion' && src !== 'dragon') return false;
       amount *= 0.35;

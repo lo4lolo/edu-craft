@@ -113,6 +113,8 @@ class Noise {
 const GRAD3 = new Float32Array([1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1, 0, 1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, -1, 0, 1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1]);
 
 // ---------------- 4x4 행렬 (열 우선) ----------------
+const M4_MUL_TMP = new Float32Array(16);
+const M4_RING = { i: 0, a: Array.from({ length: 256 }, () => new Float32Array(16)) };
 const M4 = {
   create() { const m = new Float32Array(16); m[0] = m[5] = m[10] = m[15] = 1; return m; },
   identity(m) { m.fill(0); m[0] = m[5] = m[10] = m[15] = 1; return m; },
@@ -128,14 +130,18 @@ const M4 = {
     out[12] = -(r + l) / (r - l); out[13] = -(t + b) / (t - b); out[14] = -(f + n) / (f - n); out[15] = 1;
     return out;
   },
+  // (최적화) 곱할 때마다 새 배열을 만들지 않고 미리 만든 임시 배열에 계산 (out 이 a·b 와 같아도 됨)
   mul(out, a, b) {
-    const r = new Float32Array(16);
+    const r = M4_MUL_TMP;
     for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
       let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + j] * b[i * 4 + k];
       r[i * 4 + j] = s;
     }
     out.set(r); return out;
   },
+  // 잠깐 쓰고 버리는 행렬 (돌려 쓰는 256개 중 하나, 내용은 단위 행렬 아님). 몸통·팔다리처럼 바로 쓰고 끝나는 곳에만
+  tmp() { const i = M4_RING.i = (M4_RING.i + 1) & 255; return M4_RING.a[i]; },
+  copyTmp(src) { const m = M4.tmp(); m.set(src); return m; },
   lookAt(out, eye, center, up) {
     let zx = eye[0] - center[0], zy = eye[1] - center[1], zz = eye[2] - center[2];
     let l = Math.hypot(zx, zy, zz) || 1; zx /= l; zy /= l; zz /= l;
@@ -184,9 +190,11 @@ const M4 = {
 };
 
 // 절두체 평면 추출 (viewProj) → 6개 평면 [a,b,c,d]
-function frustumPlanes(m) {
-  const p = [];
-  const r = (a, b, c, d) => { const l = Math.hypot(a, b, c); p.push([a / l, b / l, c / l, d / l]); };
+function frustumPlanes(m, out) {
+  // out(평면 6개 배열)을 주면 그 안에 채움 (매 프레임 새 배열 안 만듦)
+  const p = out || [];
+  let n = 0;
+  const r = (a, b, c, d) => { const l = Math.hypot(a, b, c); if (out) { const q = out[n++]; q[0] = a / l; q[1] = b / l; q[2] = c / l; q[3] = d / l; } else p.push([a / l, b / l, c / l, d / l]); };
   r(m[3] + m[0], m[7] + m[4], m[11] + m[8], m[15] + m[12]);
   r(m[3] - m[0], m[7] - m[4], m[11] - m[8], m[15] - m[12]);
   r(m[3] + m[1], m[7] + m[5], m[11] + m[9], m[15] + m[13]);
@@ -214,8 +222,8 @@ const EXPR_FN = {
   sin: (d) => Math.sin(d * Math.PI / 180), cos: (d) => Math.cos(d * Math.PI / 180), pow: Math.pow,
 };
 EXPR_FN['무작위'] = EXPR_FN.random; EXPR_FN['절댓값'] = EXPR_FN.abs; EXPR_FN['반올림'] = EXPR_FN.round; EXPR_FN['내림'] = EXPR_FN.floor;
-function compileExpr(src) {
-  const toks = [], re = /\s*(\d*\.?\d+|[a-zA-Z가-힣_][a-zA-Z0-9가-힣_]*|<=|>=|==|!=|&&|\|\||[-+*/%()<>=!,\[\]])/y;
+function compileExpr(src, raw) {
+  const toks = [], re = /\s*("[^"]*"|'[^']*'|\d*\.?\d+|[a-zA-Z가-힣_][a-zA-Z0-9가-힣_]*|<=|>=|==|!=|&&|\|\||[-+*/%()<>=!,\[\]])/y;
   let m; re.lastIndex = 0;
   while (re.lastIndex < src.length && (m = re.exec(src))) toks.push(m[1]);
   let i = 0;
@@ -234,17 +242,22 @@ function compileExpr(src) {
       return items.length ? items[0] : () => 0;
     }
     if (/^\d|^\./.test(t)) { const n = parseFloat(t); return () => n; }
+    if (t[0] === '"' || t[0] === "'") { const str = t.slice(1, -1); return () => str; }   // 글자 (block_is("f", "glass") 같은 데에 씀)
     if (/^[a-zA-Z가-힣_]/.test(t)) {
-      if (t === 'true' || t === '참') return () => 1;
-      if (t === 'false' || t === '거짓') return () => 0;
+      if (t === 'true' || t === '참' || t === 'True') return () => 1;
+      if (t === 'false' || t === '거짓' || t === 'False') return () => 0;
+      // 목록 길이: len(목록)
+      if (t === 'len' && peek() === '(' && /^[a-zA-Z가-힣_]/.test(toks[i + 1] || '') && toks[i + 2] === ')') { const name = toks[i + 1]; i += 3; return (v) => { const x = v && v[name]; return Array.isArray(x) ? x.length : 0; }; }
+      // 목록 항목: 목록[i] (0부터)
+      if (peek() === '[' && !EXPR_FN[t]) { i++; const idx = or(); if (peek() === ']') i++; return (v) => { const x = v && v[t]; if (!Array.isArray(x)) return 0; const k = Math.floor(num(idx(v))); const y = x[k]; return typeof y === 'number' || typeof y === 'string' ? y : 0; }; }
       if (peek() === '(' && EXPR_FN[t.toLowerCase ? t.toLowerCase() : t]) {
         i++; const args = [];
         while (peek() !== undefined && peek() !== ')') { args.push(or()); if (peek() === ',') i++; else break; }
         if (peek() === ')') i++;
         const f = EXPR_FN[t.toLowerCase()];
-        return (v) => num(f(...args.map(a => a(v))));
+        return (v) => { const r = f(...args.map(a => a(v))); return typeof r === 'string' ? r : num(r); };   // 글자를 돌려주는 함수도 (join, answer)
       }
-      return (v) => { const x = v && v[t]; return typeof x === 'number' ? x : 0; };
+      return (v) => { const x = v && v[t]; return typeof x === 'number' ? x : typeof x === 'string' ? x : 0; };
     }
     return () => 0;
   }
@@ -254,23 +267,34 @@ function compileExpr(src) {
     while (peek() === '*' || peek() === '/' || peek() === '%') { const op = next(), r = unary(), a = l; l = op === '*' ? (v) => a(v) * r(v) : op === '/' ? (v) => { const d = r(v); return d ? a(v) / d : 0; } : (v) => { const d = r(v); return d ? a(v) % d : 0; }; }
     return l;
   }
-  function add() { let l = mul(); while (peek() === '+' || peek() === '-') { const op = next(), r = mul(), a = l; l = op === '+' ? (v) => a(v) + r(v) : (v) => a(v) - r(v); } return l; }
+  // + : 둘 다 숫자(숫자 모양 글자 포함)면 더하기, 아니면 글자 잇기
+  const nOf = (x) => typeof x === 'number' ? x : typeof x === 'string' && /^\s*-?(\d+\.?\d*|\.\d+)\s*$/.test(x) ? +x : null;
+  function add() { let l = mul(); while (peek() === '+' || peek() === '-') { const op = next(), r = mul(), a = l; l = op === '+' ? (v) => { const x = a(v), y = r(v); if (typeof x === 'number' && typeof y === 'number') return x + y; const nx = nOf(x), ny = nOf(y); return nx !== null && ny !== null ? nx + ny : String(x) + String(y); } : (v) => a(v) - r(v); } return l; }
   function cmp() {
     let l = add();
+    if (peek() === 'in' && /^[a-zA-Z가-힣_]/.test(toks[i + 1] || '')) { const name = toks[i + 1]; i += 2; const a0 = l; l = (v) => { const x = v && v[name]; const r0 = a0(v); return Array.isArray(x) && x.some(y => (typeof y === 'string' || typeof r0 === 'string') ? String(y) === String(r0) : Math.abs(y - r0) < 1e-9) ? 1 : 0; }; }
     while (['<', '>', '<=', '>=', '==', '!=', '='].includes(peek())) {
       const op = next(), r = add(), a = l;
-      l = op === '<' ? (v) => +(a(v) < r(v)) : op === '>' ? (v) => +(a(v) > r(v)) : op === '<=' ? (v) => +(a(v) <= r(v)) : op === '>=' ? (v) => +(a(v) >= r(v)) : op === '!=' ? (v) => +(a(v) !== r(v)) : (v) => +(Math.abs(a(v) - r(v)) < 1e-9);
+      l = op === '==' || op === '=' ? (v) => { const x = a(v), y = r(v); return typeof x === 'string' || typeof y === 'string' ? +(String(x) === String(y)) : +(Math.abs(x - y) < 1e-9); } : op === '!=' ? (v) => { const x = a(v), y = r(v); return typeof x === 'string' || typeof y === 'string' ? +(String(x) !== String(y)) : +(x !== y); } : op === '<' ? (v) => +(a(v) < r(v)) : op === '>' ? (v) => +(a(v) > r(v)) : op === '<=' ? (v) => +(a(v) <= r(v)) : op === '>=' ? (v) => +(a(v) >= r(v)) : op === '!=' ? (v) => +(a(v) !== r(v)) : (v) => +(Math.abs(a(v) - r(v)) < 1e-9);
     }
     return l;
   }
   function and() { let l = cmp(); while (WORD_AND.has(peek())) { i++; const r = cmp(), a = l; l = (v) => +(!!a(v) && !!r(v)); } return l; }
   function or() { let l = and(); while (WORD_OR.has(peek())) { i++; const r = and(), a = l; l = (v) => +(!!a(v) || !!r(v)); } return l; }
-  try { const f = or(); return (v) => { try { return num(f(v)); } catch (e) { return 0; } }; } catch (e) { return () => 0; }
+  try { const f = or(); return raw ? (v) => { try { const r = f(v); return typeof r === 'string' ? r : num(r); } catch (e) { return 0; } } : (v) => { try { return num(f(v)); } catch (e) { return 0; } }; } catch (e) { return () => 0; }
 }
 function evalExpr(str, vars) {
   const s = String(str);
   let f = EXPR_CACHE.get(s);
   if (!f) { f = compileExpr(s); if (EXPR_CACHE.size > 2000) EXPR_CACHE.clear(); EXPR_CACHE.set(s, f); }
+  return f(vars);
+}
+// 글자 값도 그대로 돌려주는 계산 (말하기·글자 합치기·대답 비교용)
+const EXPR_CACHE_RAW = new Map();
+function evalExprRaw(str, vars) {
+  const s = String(str);
+  let f = EXPR_CACHE_RAW.get(s);
+  if (!f) { f = compileExpr(s, true); if (EXPR_CACHE_RAW.size > 2000) EXPR_CACHE_RAW.clear(); EXPR_CACHE_RAW.set(s, f); }
   return f(vars);
 }
 

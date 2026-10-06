@@ -539,7 +539,7 @@ class Builder {
         const r = gen.next(); if (r.done) break;
         if (++steps > 400000 || this.dry.size > 60000 || performance.now() - t0 > 1500) { cut = true; break; }
       }
-    } catch (e) { if (!(e && e.botStop)) err = e; } finally { Math.random = mr; }
+    } catch (e) { if (!(e && (e.botStop || e.botBreak))) err = e; } finally { Math.random = mr; }
     const cells = this.dry; this.dry = null;
     if (err) { this.log('🤖 코드 오류: ' + (err.message || err)); return; }
     const w = g.world, need = new Map();
@@ -642,6 +642,7 @@ class Builder {
       try { r = this.gen.next(); } catch (e) {
         Math.random = mr;
         if (e && e.botStop) { this.finishRun(); this.log('「코드 멈추기」 블록에서 멈췄어요'); return; }
+        if (e && e.botBreak) { this.finishRun(); return; }
         if (e && e.botOut) { this.g.ui.chatLine(`🤖 빌더봇: ${itemName(e.botOut)}이(가) 다 떨어졌어요! 가방에 더 모아 오면 이어서 지을 수 있어요. (${this.placed}칸 지음)`, '#ffb37a'); this.g.ui.toast(`🤖 ${itemName(e.botOut)}이(가) 부족해요`); }
         else this.g.ui.chatLine('🤖 코드 오류: ' + (e.message || e), '#f88');
         this.stop(); return;
@@ -684,6 +685,11 @@ class Builder {
       yield* this.exec(node);
       if (++guard > 100000) return;
     }
+  }
+  // 반복 안쪽 실행. 「반복 멈추기」를 만나면 true (그 반복만 끝냄)
+  *loopBody(list) {
+    try { yield* this.runList(list || []); } catch (e) { if (e && e.botBreak) return true; throw e; }
+    return false;
   }
   fwdVec() { return [DX[this.facing], DZ[this.facing]]; }
   rightVec() { const r = CW[this.facing]; return [DX[r], DZ[r]]; }
@@ -884,11 +890,11 @@ class Builder {
         for (let i = 0; i < n2; i++) for (let r = 0; r < w; r++) { this.putCur(...this.L(r, i, i)); yield; }
         return;
       }
-      case 'repeat': { const c = this.inum(a.n); for (let i = 0; i < c && i < 10000; i++) { this.vars['반복'] = i + 1; yield* this.runList(n.c || []); } return; }
+      case 'repeat': { const c = this.inum(a.n); for (let i = 0; i < c && i < 10000; i++) { this.vars['반복'] = i + 1; if (yield* this.loopBody(n.c)) break; } return; }
       case 'for': {
         const v = (a.v || 'i').trim() || 'i', s = this.inum(a.a), e = this.inum(a.b);
         const st = s <= e ? 1 : -1;
-        for (let i = s, c = 0; st > 0 ? i <= e : i >= e; i += st) { this.vars[v] = i; yield* this.runList(n.c || []); if (++c > 10000) break; }
+        for (let i = s, c = 0; st > 0 ? i <= e : i >= e; i += st) { this.vars[v] = i; if (yield* this.loopBody(n.c)) break; if (++c > 10000) break; }
         return;
       }
       case 'wait': if (!this.dry) this.waitT = Math.max(0, this.num(a.s)); yield; return;
@@ -942,8 +948,8 @@ class Builder {
       }
       case 'if': if (this.cond(a)) yield* this.runList(n.c || []); return;
       case 'ifelse': yield* this.runList((this.cond(a) ? n.c : n.c2) || []); return;
-      case 'until': { for (let k = 0; k < 10000 && !this.cond(a); k++) { yield* this.runList(n.c || []); yield; } return; }
-      case 'forever': { for (let k = 0; k < 100000; k++) { this.vars['반복'] = k + 1; yield* this.runList(n.c || []); yield; } return; }
+      case 'until': { for (let k = 0; k < 10000 && !this.cond(a); k++) { if (yield* this.loopBody(n.c)) break; yield; } return; }
+      case 'forever': { for (let k = 0; k < 100000; k++) { this.vars['반복'] = k + 1; if (yield* this.loopBody(n.c)) break; yield; } return; }
       case 'stop': throw { botStop: true };
       case 'func': return;   // 함수 만들기는 부를 때만 실행
       case 'call': {

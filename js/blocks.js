@@ -238,6 +238,8 @@ function defineBlocks() {
   if (typeof defineVanillaBlocks === 'function') defineVanillaBlocks();
   if (typeof defineNatureBlocks === 'function') defineNatureBlocks();
   if (typeof defineParkourBlocks === 'function') defineParkourBlocks();
+  if (typeof defineMc2Blocks === 'function') defineMc2Blocks();
+  if (typeof defineMc3Blocks === 'function') defineMc3Blocks();
   // 설명 기본값
   for (const d of BLOCKS) if (d) {
     if (!d.tex && !d.texf) d.tex = faces('stone');

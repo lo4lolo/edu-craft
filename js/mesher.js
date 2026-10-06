@@ -569,3 +569,182 @@ function meshSingleBlock(mesher, id, meta) {
   ITEM_MESH_CACHE.set(key, res);
   return res;
 }
+
+// 블록 모양 요약 (메시 작업자가 메인과 같은 블록 정의를 가졌는지 확인용)
+function meshBlockSig() {
+  let s = '';
+  for (let i = 0; i < 256; i++) { const d = BLOCKS[i]; s += d ? d.shape + ':' + d.layer + ':' + (d.opaque ? 1 : 0) + ':' + (d.tint || '') + ':' + (d.wave || 0) + ',' : '-,'; }
+  return s;
+}
+
+// =====================================================================
+// 메시 작업자 관리 (메인 스레드) — js/meshworker.js 여러 개에 청크 메시 일을 나눠 줌
+//  - 가운데 청크 + 이웃 8개의 블록·빛 배열을 복사해 보내고(전송), 정점 배열 3개를 돌려받음
+//  - c._mj: 청크마다 마지막으로 맡긴 일 번호. 그 사이 메인에서 다시 만들었으면(급한 편집) 늦게 온 결과는 버림
+//  - 파일로 열었을 때(file://), Worker 가 없을 때, 오류·결과 불일치·응답 없음 → 끄고 원래대로 메인에서 만듦
+//  - 처음 몇 개는 메인에서도 만들어 바이트 단위로 비교 (다르면 바로 끔)
+// =====================================================================
+const CSZ = 256 * HEIGHT;
+class MeshPool {
+  constructor(game) {
+    this.g = game; this.ok = false; this.dead = false; this.workers = []; this.pending = new Map(); this.done = []; this.seq = 0;
+    this.bufPool = []; this.checks = 0; this.reason = '';
+    this.stats = { sent: 0, done: 0, stale: 0, err: 0, ms: 0, verified: 0, copyMs: 0 };
+  }
+  static canUse() {
+    if (typeof Worker === 'undefined') return '이 브라우저는 Worker 없음';
+    if (location.protocol === 'file:') return '파일로 열어서 (file://) Worker 못 씀';
+    if (window.__noMeshWorker) return '꺼 둠';
+    try { if (localStorage.getItem('educraft.meshWorker') === 'off') return '꺼 둠 (educraft.meshWorker)'; } catch (e) { }
+    return '';
+  }
+  start() {
+    const why = MeshPool.canUse();
+    if (why) { this.dead = true; this.reason = why; return; }
+    try {
+      const scripts = Array.from(document.scripts).map(s => s.src).filter(src => {
+        if (!src) return false;
+        try { const u = new URL(src); return u.origin === location.origin && /\/js\/[^/]+\.js$/.test(u.pathname) && !/meshworker\.js$/.test(u.pathname); } catch (e) { return false; }
+      });
+      const mref = scripts.find(s => /\/mesher\.js/.test(s)) || '';
+      const q = mref.indexOf('?') >= 0 ? mref.slice(mref.indexOf('?')) : '';
+      const url = new URL('js/meshworker.js' + q, location.href).href;
+      const ls = {};
+      try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); const v = localStorage.getItem(k); if (/^educraft\./.test(k) && v && v.length < 4096) ls[k] = v; } } catch (e) { }
+      const init = { t: 'init', scripts, ls, texNames: TEX.names.join('|'), blockSig: meshBlockSig() };
+      const hc = navigator.hardwareConcurrency || 2, mem = navigator.deviceMemory || 8;
+      const n = Math.max(1, Math.min(mem <= 4 ? 2 : 3, hc - 1));
+      for (let i = 0; i < n; i++) {
+        const w = new Worker(url);
+        const wk = { w, busy: 0, ready: false };
+        w.onmessage = (ev) => this.onMsg(wk, ev.data);
+        w.onerror = (e) => { if (e.preventDefault) e.preventDefault(); this.fail('작업자 오류: ' + (e.message || '알 수 없음')); };
+        w.postMessage(init);
+        this.workers.push(wk);
+      }
+      this.t0 = performance.now();
+    } catch (e) { this.fail('시작 실패: ' + e.message); }
+  }
+  fail(reason) {
+    if (this.dead) return;
+    this.dead = true; this.ok = false; this.reason = reason;
+    console.warn('[메시 작업자] 끄고 메인 스레드로 만들어요:', reason);
+    for (const wk of this.workers) { try { wk.w.terminate(); } catch (e) { } }
+    this.workers = [];
+    for (const e of this.pending.values()) { e.c.meshing = false; e.c.dirty = true; }
+    this.pending.clear(); this.done.length = 0;
+  }
+  onMsg(wk, m) {
+    if (this.dead) return;
+    if (m.t === 'ready') { wk.ready = true; this.ok = true; this.readyMs = Math.round(performance.now() - this.t0); }
+    else if (m.t === 'fail') this.fail(m.msg);
+    else if (m.t === 'done') {
+      wk.busy = Math.max(0, wk.busy - 1);
+      if (m.back) for (const b of m.back) if (b.byteLength === CSZ && this.bufPool.length < 27 * (this.workers.length * 2 + 1)) this.bufPool.push(b);
+      this.stats.ms += m.ms;
+      const e = this.pending.get(m.id);
+      if (e && e.cb) { this.pending.delete(m.id); e.cb(m); return; }   // 검사용 (올리지 않음)
+      this.done.push(m);
+    } else if (m.t === 'err') {
+      this.stats.err++;
+      const e = this.pending.get(m.id); this.pending.delete(m.id);
+      if (e) wk.busy = Math.max(0, wk.busy - 1);
+      if (e && e.cb) e.cb({ arrays: [null, null, null], minY: -1, maxY: -1 });
+      else if (e && e.c._mj === m.id) { e.c.meshing = false; e.c.dirty = true; }
+      console.warn('[메시 작업자] 일 하나 실패:', m.msg);
+      if (this.stats.err >= 3) this.fail('오류가 여러 번 남');
+    }
+  }
+  // 맡길 수 있는 작업자 (하나당 2개까지)
+  free() {
+    let best = null;
+    for (const wk of this.workers) if (wk.ready && wk.busy < 2 && (!best || wk.busy < best.busy)) best = wk;
+    return best;
+  }
+  _copy(a, tr) {
+    const b = this.bufPool.pop() || new ArrayBuffer(CSZ);
+    const u = new Uint8Array(b); u.set(a); tr.push(b); return u;
+  }
+  // 청크 c 메시를 맡김 (이웃 8개가 다 빛 계산까지 끝난 상태여야 함). 맡길 곳이 없으면 false
+  send(c, cb) {
+    const wk = this.free(); if (!wk) return false;
+    const g = this.g, w = g.world, t0 = performance.now();
+    const id = ++this.seq, tr = [], chunks = [];
+    const add = (n) => {
+      const props = {};
+      for (const k in n) { const v = n[k]; const ty = typeof v; if ((ty === 'number' || ty === 'string' || ty === 'boolean') && k !== 'cx' && k !== 'cz' && k !== 'state' && k[0] !== '_') props[k] = v; }
+      chunks.push({ cx: n.cx, cz: n.cz, state: n.state, ids: this._copy(n.ids, tr), meta: this._copy(n.meta, tr), light: this._copy(n.light, tr), biome: n.biome.slice(), heights: n.heights.slice(), props });
+    };
+    add(c);
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) { if (!dx && !dz) continue; const n = w.getChunk(c.cx + dx, c.cz + dz); if (n && n.state >= 1) add(n); }
+    const job = { t: 'job', id, world: MeshPool.prim(w), mp: MeshPool.prim(g.mesher), st: MeshPool.prim(g.settings), chunks };
+    if (!cb) { c.meshing = true; c.dirty = false; c._mj = id; }
+    this.pending.set(id, { c, world: w, key: ckey(c.cx, c.cz), t: performance.now(), cb });
+    wk.busy++; this.stats.sent++;
+    const tp = performance.now();
+    wk.w.postMessage(job, tr);
+    this.stats.postMs = (this.stats.postMs || 0) + performance.now() - tp;
+    this.stats.copyMs += performance.now() - t0;
+    return true;
+  }
+  static prim(o) { const r = {}; for (const k in o) { const v = o[k]; const ty = typeof v; if (ty === 'number' || ty === 'string' || ty === 'boolean') r[k] = v; } return r; }
+  // 끝난 결과를 GPU 에 올림 (시간 예산 안에서, 최소 1개)
+  drain(tEnd) {
+    if (this.dead) return;
+    const g = this.g;
+    let n = 0;
+    while (this.done.length) {
+      if (n && performance.now() > tEnd) break;
+      const m = this.done.shift();
+      const e = this.pending.get(m.id); this.pending.delete(m.id);
+      if (!e) continue;
+      const c = e.c;
+      if (c._mj !== m.id) { this.stats.stale++; continue; }          // 그 사이 메인에서 다시 만들었음
+      c.meshing = false;
+      if (g.world !== e.world || e.world.chunks.get(e.key) !== c) { this.stats.stale++; continue; }   // 내려간 청크·바뀐 차원
+      n++; this.stats.done++;
+      // 처음 몇 개는 메인 결과와 비교 (그 사이 바뀌지 않은 청크만)
+      if (this.checks < 3 && !c.dirty) {
+        this.checks++;
+        const ref = g.mesher.build(g.world, c);
+        if (!MeshPool.same(ref, m.arrays) || c.minY !== m.minY || c.maxY !== m.maxY) { g.renderer.uploadChunk(c, ref); this.fail('메인 결과와 달라요 (청크 ' + c.cx + ',' + c.cz + ')'); return; }
+        this.stats.verified++;
+      }
+      c.minY = m.minY; c.maxY = m.maxY;
+      g.renderer.uploadChunk(c, m.arrays);
+    }
+    // 응답 없는 작업자
+    const now = performance.now();
+    for (const e of this.pending.values()) if (now - e.t > 10000) { this.fail('응답 없음'); return; }
+  }
+  // 검사: 지금 있는 청크 여러 개를 작업자와 메인에서 각각 만들어 바이트 비교 (콘솔: await game.meshPool.verify(60))
+  async verify(n) {
+    const g = this.g, w = g.world, list = [];
+    for (const c of w.chunks.values()) if (c.state >= 2 && g.neighborsReady(c)) list.push(c);
+    const res = { tested: 0, same: 0, diff: [] };
+    for (const c of list.slice(0, n || 40)) {
+      while (!this.free()) { if (this.dead) return Object.assign(res, { error: this.reason }); await new Promise(r => setTimeout(r, 5)); }
+      const m = await new Promise(r => this.send(c, r));
+      const ref = g.mesher.build(w, c);
+      res.tested++;
+      if (MeshPool.same(ref, m.arrays) && c.minY === m.minY && c.maxY === m.maxY) res.same++; else res.diff.push(c.cx + ',' + c.cz);
+    }
+    return res;
+  }
+  static same(a, b) {
+    for (let i = 0; i < 3; i++) {
+      const x = a[i], y = b[i];
+      if (!x || !y) { if (x || y) return false; continue; }
+      if (x.length !== y.length) return false;
+      for (let k = 0; k < x.length; k++) if (x[k] !== y[k]) return false;
+    }
+    return true;
+  }
+  info() {
+    return {
+      ok: this.ok, dead: this.dead, reason: this.reason, workers: this.workers.length, ready: this.workers.filter(w => w.ready).length, readyMs: this.readyMs, pending: this.pending.size,
+      sent: this.stats.sent, done: this.stats.done, stale: this.stats.stale, err: this.stats.err, verified: this.stats.verified,
+      avgMs: this.stats.done ? +(this.stats.ms / this.stats.done).toFixed(2) : 0, avgCopyMs: this.stats.sent ? +(this.stats.copyMs / this.stats.sent).toFixed(3) : 0, avgPostMs: this.stats.sent ? +((this.stats.postMs || 0) / this.stats.sent).toFixed(3) : 0, pool: this.bufPool.length,
+    };
+  }
+}

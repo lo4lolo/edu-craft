@@ -66,20 +66,35 @@ const LOD_COL = {
     }
   };
   // 청크 일 시간: 느린 기기에서는 프레임당 일을 줄여 끊김 없이
+  //  (목표 fps 기준: 60이면 28·40 아래, 30fps 제한이면 14·20 아래에서 줄임. 30fps 제한으로 잘 돌면 프레임 사이 여유가 커서 조금 더)
   const _mc = G.manageChunks;
   G.manageChunks = function (budgetMs) {
-    const fps = this.fps || 60;
-    if (this.state === 'play' && fps < 28) budgetMs = Math.min(budgetMs, 4);
-    else if (this.state === 'play' && fps < 40) budgetMs = Math.min(budgetMs, 6);
+    if (this.state === 'play') {
+      const target = this.targetFps ? this.targetFps() : 60, fps = this.fps || target;
+      if (fps < target * 0.47) budgetMs = Math.min(budgetMs, 4);
+      else if (fps < target * 0.67) budgetMs = Math.min(budgetMs, 6);
+      else if (target <= 30) budgetMs *= 1.4;
+    }
     return _mc.call(this, budgetMs);
   };
   // 저사양 모드 (한 번에)
   G.applyLowSpec = function () {
     const s = this.settings;
-    Object.assign(s, { quality: 0, renderDist: 4, renderScale: 0.6, clouds: false, fancyLeaves: false, viewBob: false, autoQuality: true });
+    Object.assign(s, { quality: 0, renderDist: 4, renderScale: 0.6, clouds: false, fancyLeaves: false, viewBob: false, autoQuality: true, dprCap: 1 });
+    this._atUndo = null; this._atNoUp = false;
     this.applySettings();
     if (this.world) for (const c of this.world.chunks.values()) c.dirty = true;
-    this.ui.toast('💻 저사양 모드: 그림자·구름·화려한 나뭇잎 끄기, 시야 4, 해상도 60%', 3500);
+    this.ui.toast('🐢 가장 가볍게: 그림자·구름·화려한 나뭇잎 끄기, 시야 4, 해상도 60%', 3500);
+  };
+  // 💻 크롬북(저사양) 맞춤 (game.js CHROMEBOOK_PRESET): 저사양 모드 + 30fps 제한 + 화면 배율 1
+  G.applyChromebook = function (quiet) {
+    const s = this.settings, leaves = s.fancyLeaves, rd = s.renderDist;
+    Object.assign(s, CHROMEBOOK_PRESET);
+    if (rd !== s.renderDist) this._order = null;
+    this._atUndo = null; this._atNoUp = false;   // 자동 화질은 여기서부터 다시
+    this.applySettings();
+    if (leaves !== s.fancyLeaves && this.world) for (const c of this.world.chunks.values()) c.dirty = true;
+    if (!quiet) this.ui.toast('💻 크롬북 맞춤: 그림자 끄기, 시야 4, 해상도 70%, 30fps 로 부드럽게', 3500);
   };
   // 처음 켤 때 약한 그래픽 → 화려한 나뭇잎도 끔
   const _gl = G.guessLowEnd;
@@ -110,8 +125,9 @@ const LOD_COL = {
     if (!this._lowT) this._lowT = now;
     if (now - this._lowT < 4000) return;
     this._lowT = now;
-    const s = this.settings, slow = (this.fps || 60) < 24;
+    const s = this.settings, slow = (this.fps || 60) < ((+s.fpsCap || 0) > 0 ? Math.min(24, this.targetFps() * 0.7) : 24);
     if (!slow) return;
+    this.tuneSnap();
     const steps = [
       [() => s.fancyLeaves !== false, () => { s.fancyLeaves = false; if (this.world) for (const c of this.world.chunks.values()) c.dirty = true; }],
       [() => s.clouds !== false, () => s.clouds = false],
@@ -121,9 +137,10 @@ const LOD_COL = {
       [() => s.renderDist > 3, () => s.renderDist = 3],
       [() => s.renderScale > 0.45, () => s.renderScale = 0.45],
     ];
-    const st = steps.find(x => x[0]()); if (!st) return;
-    st[1](); this.applySettings();
-    this.ui.toast('🐢 아직 느려서 한 단계 더 가볍게 했어요 (설정 → 💻 저사양 모드)', 3000);
+    const st = steps.find(x => x[0]()); if (!st) { this._atUndo.pop(); return; }
+    if (this._atUpT && now - this._atUpT < 60000) this._atNoUp = true;
+    st[1](); if (s.renderDist !== this._orderR) this._order = null; this.applySettings();
+    this.ui.toast('🐢 아직 느려서 한 단계 더 가볍게 했어요 (설정 → 💻 크롬북 맞춤)', 3000);
   };
 }
 // 파티클 한도
@@ -138,8 +155,27 @@ const LOD_COL = {
     _ss.call(this, back);
     const s = document.getElementById('menu-settings'); if (!s || s.querySelector('#s-low')) return;
     const box = document.createElement('div'); box.className = 'low-box';
-    box.innerHTML = `<button class="btn blue" id="s-low">💻 저사양 모드 (오래된 노트북·태블릿)</button><small class="muted">한 번에 가장 가볍게 맞춰요. ${this.g.gpuName ? '그래픽: ' + esc(String(this.g.gpuName).replace(/^ANGLE \(|\)$/g, '').slice(0, 60)) + ' · ' : ''}지금 ${this.g.fps || 0} fps</small>`;
+    const mp = this.g.meshPool, mw = mp && mp.ok ? ` · 지형 만들기 도우미 ${mp.workers.length}개` : '';
+    box.innerHTML = `<button class="btn blue" id="s-cb">💻 크롬북(저사양) 맞춤</button> <button class="btn" id="s-low">🐢 가장 가볍게 (오래된 노트북·태블릿)</button><small class="muted">크롬북 맞춤: 그림자 끄기 · 시야 4 · 해상도 70% · 30fps 로 부드럽게. ${this.g.gpuName ? '그래픽: ' + esc(String(this.g.gpuName).replace(/^ANGLE \(|\)$/g, '').slice(0, 60)) + ' · ' : ''}지금 ${this.g.fps || 0} fps${mw}</small>`;
     const h2 = s.querySelector('h2'); h2.insertAdjacentElement('afterend', box);
     box.querySelector('#s-low').onclick = () => { this.g.applyLowSpec(); this.showSettings(back); };
+    box.querySelector('#s-cb').onclick = () => { this.g.applyChromebook(); this.showSettings(back); };
+  };
+}
+// 미니맵: 매 프레임 DOM 을 찾고 쓰던 것을 바뀔 때만 (원래 update 모양이 그대로일 때만 바꿈)
+if (typeof Minimap !== 'undefined' && /mm-arrow/.test(String(Minimap.prototype.update)) && /redraw\(\)/.test(String(Minimap.prototype.update))) {
+  Minimap.prototype.update = function (dt) {
+    const g = this.g, on = g.settings.minimap !== false && g.state === 'play' && !g.settings.hideHud;
+    const disp = on ? '' : 'none';
+    if (this._disp !== disp) { this._disp = disp; this.el.style.display = disp; }
+    if (!on) return;
+    const p = g.player;
+    const ar = this._ar || (this._ar = this.el.querySelector('.mm-arrow')), pe = this._pe || (this._pe = this.el.querySelector('.mm-pos'));
+    const yaw = Math.round(-p.yaw * 50) / 50;
+    if (yaw !== this._yaw) { this._yaw = yaw; ar.style.transform = `translate(-50%,-50%) rotate(${yaw}rad)`; }
+    const fx = Math.floor(p.x), fy = Math.floor(p.y), fz = Math.floor(p.z);
+    if (fx !== this._px || fy !== this._py || fz !== this._pz) { this._px = fx; this._py = fy; this._pz = fz; pe.textContent = `X ${fx} · Y ${fy} · Z ${fz}`; }
+    this.t -= dt; if (this.t > 0) return;
+    this.t = 0.5; this.redraw();
   };
 }

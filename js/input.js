@@ -241,7 +241,7 @@ class Input {
           }
           case 'KeyW': { const now = performance.now(); if (now - this.lastW < 280) this.sprintLatch = true; this.lastW = now; break; }
           case 'ShiftLeft': case 'ShiftRight': this.ev.sneakPress = true; break;
-          case 'KeyF': g.ui.toggleRsOverlay && g.ui.toggleRsOverlay(); return;
+          case 'KeyF': if (e.shiftKey) { g.ui.toggleRsOverlay && g.ui.toggleRsOverlay(); } else if (g.swapHands) g.swapHands(); return;
         }
         if (code.startsWith('Digit')) { const n = +code.slice(5); if (n >= 1 && n <= 9) g.selectSlot(n - 1); }
       }

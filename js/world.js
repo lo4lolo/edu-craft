@@ -357,7 +357,7 @@ class World {
   }
 
   // ---------------- 빛 ----------------
-  initLight(c) {
+  initLight(c, sliced) {
     const ids = c.ids, light = c.light;
     light.fill(0);
     const skyQ = [], blkQ = [];
@@ -404,9 +404,22 @@ class World {
         if ((L & 15) > 1) blkQ.push(wx, y, wz);
       }
     }
+    c.dirty = true;
+    // sliced: 빛 퍼뜨리기를 여러 프레임에 나눠서 (continueLight). 끝날 때까지 이 청크와 이웃은 메시를 안 만듦
+    if (sliced) { c._lightJob = { q: [skyQ, blkQ], k: 0, i: 0 }; return; }
     this.propagate(skyQ, 0);
     this.propagate(blkQ, 1);
-    c.dirty = true;
+  }
+  // 나눠 하는 빛 퍼뜨리기를 tEnd(performance.now 기준)까지 이어서 함. 다 끝나면 true
+  continueLight(c, tEnd) {
+    const J = c._lightJob; if (!J) return true;
+    while (J.k < 2) {
+      const r = this.propagate(J.q[J.k], J.k, tEnd, J.i);
+      if (r >= 0) { J.i = r; return false; }
+      J.k++; J.i = 0;
+    }
+    c._lightJob = null; c.dirty = true;
+    return true;
   }
   _lget(x, y, z, ch) {
     const c = this.getChunk(x >> 4, z >> 4); if (!c || c.state < 2) return -1;
@@ -419,9 +432,11 @@ class World {
     c.light[i] = ch === 0 ? (c.light[i] & 15) | (v << 4) : (c.light[i] & 0xF0) | v;
     this.markDirty(x, y, z);
   }
-  propagate(q, ch) {
-    let i = 0;
+  // tEnd 를 주면 시간이 다 됐을 때 멈추고 이어서 할 위치를 돌려줌 (다 끝나면 -1)
+  propagate(q, ch, tEnd, start) {
+    let i = start || 0, n = 0;
     while (i < q.length) {
+      if (tEnd && (++n & 511) === 0 && performance.now() > tEnd) return i;
       const x = q[i++], y = q[i++], z = q[i++];
       const c = this.getChunk(x >> 4, z >> 4); if (!c || c.state < 2) continue;
       const L0 = c.light[(x & 15) | ((z & 15) << 4) | (y << 8)];
@@ -446,6 +461,7 @@ class World {
       }
       if (i > 3000000) { q.length = 0; break; }
     }
+    return -1;
   }
   markLightDirty(c, lx, lz) {
     c.dirty = true;

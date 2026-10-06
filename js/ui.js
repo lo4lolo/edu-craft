@@ -5,7 +5,7 @@
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const VERSION = 'v1.4';
+const VERSION = 'v1.7';
 
 // HUD용 픽셀 아이콘 (하트/배고픔/숨)
 const HUD_ART = {
@@ -221,7 +221,13 @@ class UI {
         <div class="field"><label>시드 (비워 두면 무작위)</label><input type="text" id="n-seed" placeholder="예: 1234 또는 우리반"></div>
         <div class="row"><button class="btn primary" id="n-go" style="flex:1">세계 만들기</button><button class="btn" id="n-back">취소</button></div>
       </div>`, 'menu-bg');
-    const seg = (id, key) => { const el = $('#' + id, s); const upd = () => $$('button', el).forEach(b => b.classList.toggle('on', b.dataset.v === st[key])); $$('button', el).forEach(b => b.onclick = () => { st[key] = b.dataset.v; upd(); if (key === 'type' && st.type === 'flat') $('#n-peace', s).checked = true; }); upd(); };
+    const segUpd = {};
+    const seg = (id, key) => { const el = $('#' + id, s); const upd = segUpd[key] = () => $$('button', el).forEach(b => b.classList.toggle('on', b.dataset.v === st[key])); $$('button', el).forEach(b => b.onclick = () => {
+      st[key] = b.dataset.v; upd();
+      if (key === 'type' && st.type === 'flat') $('#n-peace', s).checked = true;
+      // 크리에이티브는 처음부터 평지로 (바꾸고 싶으면 지형을 다시 고르면 돼요)
+      if (key === 'mode') { st.type = st.mode === 'creative' ? 'flat' : 'normal'; $('#n-peace', s).checked = st.mode === 'creative'; segUpd.type && segUpd.type(); }
+    }); upd(); };
     seg('n-mode', 'mode'); seg('n-type', 'type');
     $('#n-back', s).onclick = () => this.showWorlds(pickMode);
     $('#n-go', s).onclick = async () => {
@@ -320,7 +326,8 @@ class UI {
         <h2>⚙ 설정</h2>
         <div class="field"><label>셰이더 품질</label><div class="seg" id="s-q">
           <button class="btn small" data-v="0">낮음 (그림자 없음)</button><button class="btn small" data-v="1">보통 (그림자)</button><button class="btn small" data-v="2">높음 (빛내림·블룸)</button><button class="btn small" data-v="3">최고 (고해상도 그림자·선명한 화면)</button></div></div>
-        <label class="check"><input type="checkbox" id="s-auto"> 🐢 느려지면 화질 자동으로 낮추기 (학생 노트북 추천)</label>
+        <div class="field"><label>초당 그림 수 (FPS 제한)</label><div class="seg" id="s-fps"><button class="btn small" data-v="30">30 (크롬북·배터리 아끼기)</button><button class="btn small" data-v="60">60</button><button class="btn small" data-v="0">제한 없음</button></div></div>
+        <label class="check"><input type="checkbox" id="s-auto"> 🐢 느려지면 화질 자동으로 낮추기 (빨라지면 다시 올려요 · 학생 노트북 추천)</label>
         <div class="field"><label>시야 거리: <b id="s-rd-v"></b> 청크</label><input type="range" id="s-rd" min="2" max="14" step="1"></div>
         <div class="field"><label>화면 해상도 배율: <b id="s-rs-v"></b></label><input type="range" id="s-rs" min="0.4" max="1" step="0.05"></div>
         <div class="field"><label>시야각(FOV): <b id="s-fov-v"></b>°</label><input type="range" id="s-fov" min="55" max="110" step="1"></div>
@@ -347,6 +354,10 @@ class UI {
     const updQ = () => $$('button', segQ).forEach(b => b.classList.toggle('on', +b.dataset.v === st.quality));
     $$('button', segQ).forEach(b => b.onclick = () => { st.quality = +b.dataset.v; updQ(); g.applySettings(); });
     updQ();
+    const segF = $('#s-fps', s);
+    const updF = () => $$('button', segF).forEach(b => b.classList.toggle('on', +b.dataset.v === (+st.fpsCap || 0)));
+    $$('button', segF).forEach(b => b.onclick = () => { st.fpsCap = +b.dataset.v; updF(); g.applySettings(); });
+    updF();
     const rng = (id, key, fmt) => { const el = $('#' + id, s), v = $('#' + id + '-v', s); el.value = st[key]; v.textContent = fmt ? fmt(st[key]) : st[key]; el.oninput = () => { st[key] = parseFloat(el.value); v.textContent = fmt ? fmt(st[key]) : st[key]; if (key === 'renderDist') g._order = null; g.applySettings(); }; };
     rng('s-rd', 'renderDist'); rng('s-rs', 'renderScale', v => Math.round(v * 100) + '%'); rng('s-fov', 'fov'); rng('s-br', 'brightness', v => Math.round(v * 100) + '%'); rng('s-sens', 'sens', v => v.toFixed(2)); rng('s-vol', 'volume', v => Math.round(v * 100) + '%'); rng('s-ts', 'touchSize', v => Math.round(v * 100) + '%');
     const chk = (id, key, fn) => { const el = $('#' + id, s); el.checked = st[key] !== false; el.onchange = () => { st[key] = el.checked; g.applySettings(); fn && fn(); }; };
@@ -401,7 +412,7 @@ class UI {
         <tr><td>마을</td><td>평원·사막·자작나무 숲에 마을이 있어요 (<code>/locate village</code>). 주민을 우클릭하면 에메랄드로 거래해요. 철 골렘이 마을을 지켜요.</td></tr>
         <tr><td>늑대</td><td>숲·눈밭의 늑대에게 뼈를 주면 길들여져요. 우클릭으로 앉기/따라오기, 고기를 주면 회복. 저장해도 남아요.</td></tr>
         <tr><td>낚시</td><td>막대기 3 + 실 2로 낚싯대. 물에 던지고 찌가 쏙 들어가면 다시 우클릭! 물고기·보물·경험치.</td></tr>
-        <tr><td>방패</td><td>판자 + 철 주괴. 들고 오른쪽 버튼을 누르고 있으면 공격·화살을 막아요.</td></tr>
+        <tr><td>방패</td><td>판자 + 철 주괴. <kbd>F</kbd>로 <b>왼손(보조 손)</b>에 들면 오른손에는 칼을 든 채 오른쪽 버튼을 누르고 있어 막을 수 있어요. 앞에서 오는 공격만 막고, 막는 동안은 천천히 걸어요.</td></tr>
         <tr><td>나침반·시계</td><td>들고 있으면 집 방향 / 지금 시각을 보여 줘요.</td></tr>
         <tr><td>농사·음식</td><td>당근·감자(마을 밭), 호박·잭오랜턴, 수박, 버섯 스튜, 구운 감자, 호박 파이, 황금 당근, 건초 더미.</td></tr>
         <tr><td>도전 과제</td><td>나무 베기부터 드래곤까지 27개 (<kbd>L</kbd> 키). 깰 때마다 경험치!</td></tr></table>`,
@@ -420,7 +431,7 @@ class UI {
         <tr><td><kbd>B</kbd></td><td>🤖 블록 코딩 창 (빌더봇)</td></tr>
         <tr><td><kbd>Q</kbd></td><td>아이템 버리기 (<kbd>Ctrl</kbd>+<kbd>Q</kbd> 한 묶음)</td></tr>
         <tr><td><kbd>T</kbd> / <kbd>/</kbd></td><td>채팅 / 명령어 (<code>/help</code>)</td></tr>
-        <tr><td><kbd>F</kbd></td><td>회로 정보 표시 켜기/끄기</td></tr>
+        <tr><td><kbd>F</kbd></td><td>오른손 ↔ 왼손(보조 손) 바꾸기 · <kbd>Shift</kbd>+<kbd>F</kbd> 회로 정보 표시</td></tr>
         <tr><td><kbd>F1</kbd> <kbd>F3</kbd> <kbd>F5</kbd></td><td>화면 정보 숨기기 · 디버그 정보 · 3인칭 시점</td></tr>
         <tr><td><kbd>Esc</kbd> / <kbd>P</kbd> / ☰</td><td>일시정지 메뉴 (멀티로 열기·친구 방 들어가기·저장·설정)</td></tr>
         <tr><td><kbd>L</kbd></td><td>🏆 도전 과제</td></tr></table>
@@ -488,7 +499,15 @@ class UI {
         <tr><td>④ 되돌리기</td><td>↶ 되돌리기를 누르면 마지막 실행으로 지은 것이 사라져요.</td></tr>
         <tr><td>👁 미리보기</td><td>짓기 전에 생길 자리를 파란 테두리로 보여 주고, 서바이벌이면 <b>필요한 재료</b>를 계산해 줘요. 「▶ 이대로 짓기」로 바로 지어요.</td></tr>
         <tr><td>👣 한 단계씩</td><td>블록 하나씩 멈추며 실행해요. 오른쪽 창의 「다음 ▶」을 누를 때마다 한 걸음! (실행 중 ⏸ 로도 멈출 수 있어요)</td></tr>
-        <tr><td>🎓 코딩 마스터</td><td>차례대로 → 반복 → 변수 → 조건 → 함수 → 마스터, 6장 22단계. 빌더봇이 실제로 지은 모양을 검사하고, 모자란 점을 알려 줘요. 장을 깨면 빌더봇 색이 바뀌어요.</td></tr></table>
+        <tr><td>🎓 코딩 마스터</td><td>차례대로 → 반복 → 변수 → 조건 → 함수 → 신호·목록 → 텍스트 코딩 → 마스터, 8장 29단계. 빌더봇이 실제로 지은 모양을 검사하고, 모자란 점을 알려 줘요. 장을 깨면 빌더봇 색이 바뀌어요.</td></tr></table>
+        <h3>v1.6 범주 · 값 블록 · 글자 코딩</h3><table>
+        <tr><td>범주 막대</td><td>왼쪽 동그라미(시작·움직임·건축·도형·흐름·판단·계산·자료·함수·말하기·소리·레드스톤)를 누르면 그 블록으로 바로 가요.</td></tr>
+        <tr><td>◯ 둥근 값 블록</td><td>「i × 2」, 「1부터 10 사이 무작위 수」, 「목록의 n번째 항목」처럼 <b>값</b>이 되는 블록. 숫자 칸에 끌어다 끼워요. 빼려면 끌어서 밖으로!</td></tr>
+        <tr><td>◇ 뾰족한 판단 블록</td><td>「x &lt; 5」, 「~그리고~」, 「아래 쪽 블록이 잔디인가?」처럼 참·거짓이 되는 블록. 「만약」, 「~인 동안 반복」의 조건 칸에 끼워요.</td></tr>
+        <tr><td>📣 신호</td><td>「신호를 받았을 때」 안에 블록을 넣고, 「신호 보내기」로 깨워요. 같은 신호를 받는 묶음이 여럿이면 차례로 모두 실행돼요.</td></tr>
+        <tr><td>📋 목록</td><td>값 여러 개를 한 이름에 담아요. 넣기·바꾸기·지우기·비우기, 「n번째 항목」, 「길이」, 「~이 있는가?」.</td></tr>
+        <tr><td>🔧 입력값 함수</td><td>「함수 기둥 만들기 · 입력 <b>층</b>」 → 「함수 기둥 실행하기 · 값 <b>5</b>」. 함수 안에서 층 = 5 가 돼요. 입력은 쉼표로 여러 개. (높이·놓은수·반복은 빌더봇이 쓰는 이름이라 피해요)</td></tr>
+        <tr><td>📝 글자 코딩</td><td>코딩 창 위 「🧩 블록 · 🔀 나란히 · 📝 글자」. 블록을 파이썬 모양 글자로 바꾸고(🧩→📝), 고친 글자를 블록으로 적용(📝→🧩)하거나 바로 실행해요. 틀린 줄은 빨간 번호로 알려 줘요. 「📖 명령어」에 모든 명령이 있어요.</td></tr></table>
         <h3>새 블록 (v1.1)</h3><table>
         <tr><td>만약 ~이면 / 아니면</td><td>앞·아래·위에 블록이 있는지, 물인지, 낮·밤, 동전 던지기, 또는 <code>i % 2 == 0</code> 같은 식으로 갈라져요.</td></tr>
         <tr><td>~이(가) 될 때까지 반복 · 계속 반복</td><td>조건이 맞을 때까지 / 멈출 때까지 되풀이해요. 「코드 멈추기」로 끝낼 수 있어요.</td></tr>

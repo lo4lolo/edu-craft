@@ -8,7 +8,7 @@
 const PEERJS_URLS = ['https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js', 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'];
 const PEER_PREFIX = 'educraft-v1-';
 // 통신 규칙 번호: 서로 다른 버전(예: 웨일은 옛 버전이 캐시에, 엣지는 새 버전)이 섞이면 알려 주려고
-const NET_PROTO = 3;
+const NET_PROTO = 5;
 // 연결 길 찾기: 학교 와이파이처럼 기기끼리 바로 연결이 막힌 곳에서는 TURN 중계 서버로 우회
 const ICE_SERVERS = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
@@ -121,7 +121,6 @@ class Net {
   async host(mode) {
     const g = this.g;
     if (this.isHost) return;
-    if (g.world && g.world.dim && g.world.dim !== 'overworld') { g.ui.toast('지옥·엔드에서는 방을 열 수 없어요. 평소 세계로 돌아간 뒤 열어 주세요.', 4000); return; }
     try {
       if (mode === 'lan') {
         await this.detectServer();
@@ -204,11 +203,12 @@ class Net {
           this.flush();
           return;
         }
-        const r = { id, name: String(m.name || '친구').slice(0, 16), skin: SKINS[(m.skin | 0) % SKINS.length], av: sanitizeAvatar(m.av), x: g.player.spawn[0], y: g.player.spawn[1], z: g.player.spawn[2], yaw: 0, pitch: 0, walkAnim: 0, speed: 0, bot: null, vx: 0, vy: 0, vz: 0, h: 1.8 };
+        const sp0 = g.dimSpawn || g.player.spawn;
+        const r = { id, name: String(m.name || '친구').slice(0, 16), skin: SKINS[(m.skin | 0) % SKINS.length], av: sanitizeAvatar(m.av), x: sp0[0], y: sp0[1], z: sp0[2], yaw: 0, pitch: 0, walkAnim: 0, speed: 0, bot: null, vx: 0, vy: 0, vz: 0, h: 1.8 };
         g.remotes.set(id, r);
         const mods = {};
         for (const [k, mm] of w.mods) { const a = []; for (const [i, v] of mm) a.push(i, v); mods[k] = a; }
-        this.sendTo(id, { t: 'welcome', proto: NET_PROTO, v: VERSION, gen: g.worldGen || 1, id, seed: w.seed, type: w.type, mode: g.worldMode, time: w.time, rain: g.rainTarget, rules: g.worldRules, mods, be: Array.from(w.be.entries()), spawn: g.player.spawn, worldName: g.worldName });
+        this.sendTo(id, { t: 'welcome', proto: NET_PROTO, v: VERSION, gen: g.worldGen || 1, id, seed: w.seed, type: w.type, mode: g.worldMode, time: w.time, rain: g.rainTarget, rules: g.worldRules, mods, be: Array.from(w.be.entries()), spawn: g.player.spawn, worldName: g.worldName, dim: w.dim, dimSpawn: g.dimSpawn || null });
         // 아바타 주고받기: 새 친구에게 모두의 아바타, 모두에게 새 친구의 아바타
         this.sendTo(id, { t: 'av', id: 'host', name: g.player.name, av: avatarNet(g.avatar) });
         for (const [rid, rr] of g.remotes) if (rid !== id && rr.av) this.sendTo(id, { t: 'av', id: rid, name: rr.name, av: avatarNet(rr.av) });
@@ -230,7 +230,7 @@ class Net {
         const p = m.p;
         const ox = r.x, oz = r.z;
         r.x = p[0]; r.y = p[1]; r.z = p[2]; r.yaw = p[3]; r.pitch = p[4]; r.sneaking = !!m.s; r.held = m.h; r.bot = m.bot || null; r.swingAnim = m.sw || 0;
-        r.speed = m.v || 0; r.walkAnim = m.wa || 0; r.bodyYaw = p[3]; r.armor = Array.isArray(m.ar) ? m.ar.slice(0, 4) : null;
+        r.speed = m.v || 0; r.walkAnim = m.wa || 0; r.bodyYaw = p[3]; r.armor = Array.isArray(m.ar) ? m.ar.slice(0, 4) : null; r.offhandId = m.oh | 0; r.blocking = !!m.bk;
         return;
       }
       case 'set': {
@@ -363,7 +363,7 @@ class Net {
           let r = g.remotes.get(id);
           if (!r) { r = { id, name: s[1], x: s[2], y: s[3], z: s[4], yaw: s[5], pitch: s[6], walkAnim: 0, h: 1.8, vx: 0, vy: 0, vz: 0 }; g.remotes.set(id, r); }
           if (!r.av && this.avs.has(id)) r.av = this.avs.get(id);
-          r.name = s[1]; r.tx = s[2]; r.ty = s[3]; r.tz = s[4]; r.yaw = s[5]; r.bodyYaw = s[5]; r.pitch = s[6]; r.sneaking = !!s[7]; r.held = s[8]; r.skin = SKINS[(s[9] | 0) % SKINS.length]; r.speed = s[10]; r.walkAnim = s[11]; r.swingAnim = s[12]; r.bot = s[13]; r.armor = s[14] || null;
+          r.name = s[1]; r.tx = s[2]; r.ty = s[3]; r.tz = s[4]; r.yaw = s[5]; r.bodyYaw = s[5]; r.pitch = s[6]; r.sneaking = !!s[7]; r.held = s[8]; r.skin = SKINS[(s[9] | 0) % SKINS.length]; r.speed = s[10]; r.walkAnim = s[11]; r.swingAnim = s[12]; r.bot = s[13]; r.armor = s[14] || null; r.offhandId = s[15] | 0; r.blocking = !!s[16];
           if (r.x === undefined || Math.abs(r.x - r.tx) > 8) { r.x = r.tx; r.y = r.ty; r.z = r.tz; }
         }
         for (const id of Array.from(g.remotes.keys())) if (!seen.has(id)) g.remotes.delete(id);
@@ -449,8 +449,8 @@ class Net {
       if (g.netSets.length) { this.broadcast({ t: 'sets', b: g.netSets }); g.netSets = []; }
       if (this.stateT >= 0.1) {
         this.stateT = 0;
-        const l = [['host', p.name, r2(p.x), r2(p.y), r2(p.z), r2(p.yaw), r2(p.pitch), p.sneaking ? 1 : 0, p.held ? p.held.id : 0, g.settings.skin, r2(Math.hypot(p.vx, p.vz) / 3), r2(p.bobPhase), sw, g.builder.netState(), p.armor.map(a => a ? a.id : 0)]];
-        for (const [id, r] of g.remotes) l.push([id, r.name, r2(r.x), r2(r.y), r2(r.z), r2(r.yaw), r2(r.pitch), r.sneaking ? 1 : 0, r.held || 0, SKINS.indexOf(r.skin), r.speed || 0, r.walkAnim || 0, r.swingAnim || 0, r.bot || null, r.armor || null]);
+        const l = [['host', p.name, r2(p.x), r2(p.y), r2(p.z), r2(p.yaw), r2(p.pitch), p.sneaking ? 1 : 0, p.held ? p.held.id : 0, g.settings.skin, r2(Math.hypot(p.vx, p.vz) / 3), r2(p.bobPhase), sw, g.builder.netState(), p.armor.map(a => a ? a.id : 0), p.offhand ? p.offhand.id : 0, p.blocking ? 1 : 0]];
+        for (const [id, r] of g.remotes) l.push([id, r.name, r2(r.x), r2(r.y), r2(r.z), r2(r.yaw), r2(r.pitch), r.sneaking ? 1 : 0, r.held || 0, SKINS.indexOf(r.skin), r.speed || 0, r.walkAnim || 0, r.swingAnim || 0, r.bot || null, r.armor || null, r.offhandId || 0, r.blocking ? 1 : 0]);
         this.broadcast({ t: 'players', l });
       }
       if (this.entT >= 0.1) {
@@ -463,7 +463,7 @@ class Net {
     } else {
       if (this.stateT >= 0.1) {
         this.stateT = 0;
-        this.send({ t: 'ps', p: [r2(p.x), r2(p.y), r2(p.z), r2(p.yaw), r2(p.pitch)], s: p.sneaking ? 1 : 0, h: p.held ? p.held.id : 0, v: r2(Math.hypot(p.vx, p.vz) / 3), wa: r2(p.bobPhase), sw, bot: g.builder.netState(), ar: p.armor.map(a => a ? a.id : 0) });
+        this.send({ t: 'ps', p: [r2(p.x), r2(p.y), r2(p.z), r2(p.yaw), r2(p.pitch)], s: p.sneaking ? 1 : 0, h: p.held ? p.held.id : 0, v: r2(Math.hypot(p.vx, p.vz) / 3), wa: r2(p.bobPhase), sw, bot: g.builder.netState(), ar: p.armor.map(a => a ? a.id : 0), oh: p.offhand ? p.offhand.id : 0, bk: p.blocking ? 1 : 0 });
       }
       // 다른 플레이어 보간
       const k = Math.min(1, dt * 12);

@@ -510,7 +510,7 @@ class Renderer {
     gl.bindVertexArray(this.skinVAO);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.skinVBO);
-    gl.bufferData(gl.ARRAY_BUFFER, sb.f32.subarray(0, sb.n * 14), gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, sb.f32, gl.DYNAMIC_DRAW, 0, sb.n * 14);
     gl.drawElements(gl.TRIANGLES, sb.n / 4 * 6, gl.UNSIGNED_INT, 0);
     return pr;
   }
@@ -647,14 +647,14 @@ class Renderer {
     const cy = Math.cos(st.yaw), sy = Math.sin(st.yaw), cp = Math.cos(st.pitch), sp = Math.sin(st.pitch);
     const fwd = [-sy * cp, sp, -cy * cp];
     M4.lookAt(this.view, [0, 0, 0], fwd, [0, 1, 0]);
-    if (st.bob) { const b = M4.create(); M4.translate(b, st.bob[0], st.bob[1], 0); M4.mul(this.view, b, this.view); }
+    if (st.bob) { const b = this._bobM || (this._bobM = M4.create()); M4.translate(b, st.bob[0], st.bob[1], 0); M4.mul(this.view, b, this.view); }
     M4.mul(this.viewProj, this.proj, this.view);
     M4.invert(this.invVP, this.viewProj);
-    const planes = frustumPlanes(this.viewProj);
+    const planes = frustumPlanes(this.viewProj, this._planes || (this._planes = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]));
     st.fogFar = (st.renderDist * 16 - 4) * (st.fogScale || 1); st.fogNear = st.fogFar * (st.fogScale ? 0.35 : 0.72);
     if (st.rain) { st.fogNear *= (1 - st.rain * 0.5); }
     // 보이는 청크 목록
-    const list = [];
+    const list = this._list || (this._list = []); list.length = 0;   // (최적화) 매 프레임 새 배열·새 좌표 배열을 만들지 않음
     const ccx = Math.floor(cam[0] / 16), ccz = Math.floor(cam[2] / 16);
     const rd = st.renderDist;
     for (const c of world.chunks.values()) {
@@ -662,7 +662,7 @@ class Renderer {
       const dx = c.cx - ccx, dz = c.cz - ccz;
       if (dx * dx + dz * dz > (rd + 0.5) * (rd + 0.5)) continue;
       const ox = c.cx * 16 - cam[0], oz = c.cz * 16 - cam[2];
-      c._rel = [ox, -cam[1], oz];
+      const rel = c._rel || (c._rel = [0, 0, 0]); rel[0] = ox; rel[1] = -cam[1]; rel[2] = oz;
       c._dist = (ox + 8) * (ox + 8) + (oz + 8) * (oz + 8);
       c._vis = aabbInFrustum(planes, ox, (c.minY || 0) - cam[1], oz, ox + 16, (c.maxY || HEIGHT) - cam[1], oz + 16);
       list.push(c);
@@ -748,7 +748,7 @@ class Renderer {
       gl.bindVertexArray(this.entVAO);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.entVBO);
-      gl.bufferData(gl.ARRAY_BUFFER, this.ent.f32.subarray(0, this.ent.n * 14), gl.DYNAMIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, this.ent.f32, gl.DYNAMIC_DRAW, 0, this.ent.n * 14);
       gl.drawElements(gl.TRIANGLES, this.ent.n / 4 * 6, gl.UNSIGNED_INT, 0);
     }
     if (this.skin.n) this.drawSkinBatch(this.skin, A, st, this.viewProj);
@@ -776,7 +776,10 @@ class Renderer {
       gl.uniformMatrix4fv(pr.u.u_viewProj, false, this.viewProj);
       gl.uniform4f(pr.u.u_color, 0, 0, 0, 0.55);
       gl.bindVertexArray(this.lineVAO); gl.bindBuffer(gl.ARRAY_BUFFER, this.lineVBO);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(st.selLines), gl.DYNAMIC_DRAW);
+      const n = st.selLines.length;
+      if (!this._selF || this._selF.length < n) this._selF = new Float32Array(Math.max(n * 2, 288));
+      for (let i = 0; i < n; i++) this._selF[i] = st.selLines[i];
+      gl.bufferData(gl.ARRAY_BUFFER, this._selF, gl.DYNAMIC_DRAW, 0, n);
       gl.drawArrays(gl.LINES, 0, st.selLines.length / 3);
     }
     // 빌더봇 미리보기 테두리 (한 번 올려 두고 원점만 옮겨 그림). 땅속도 흐리게 보이게 두 번
@@ -802,6 +805,7 @@ class Renderer {
     gl.disable(gl.BLEND);
     // 손 / 들고 있는 아이템
     if (st.hand) this.drawHand(st, A);
+    if (st.offhand && this.drawOffhand) this.drawOffhand(st, A);
     gl.depthRange(0.0, 1.0);
     this.stats.chunks = nch; this.stats.tris = tris;
     // -------- 후처리 --------
@@ -845,7 +849,7 @@ class Renderer {
     this.ensureIndices(mb.n / 4 + 1);
     gl.bindVertexArray(this.dynVAO.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.dynVAO.vbo);
-    gl.bufferData(gl.ARRAY_BUFFER, new Uint8Array(mb.buf, 0, mb.n * VSTRIDE), gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, mb.u8, gl.DYNAMIC_DRAW, 0, mb.n * VSTRIDE);
     gl.drawElements(gl.TRIANGLES, mb.n / 4 * 6, gl.UNSIGNED_INT, 0);
   }
   renderShadows(st, list, A, cam) {
@@ -876,7 +880,7 @@ class Renderer {
     const center = [rx * dr + ux * du, ry * dr + uy * du, rz * dr + uz * du];
     const D = 160;
     const eye = [center[0] + L[0] * D, center[1] + L[1] * D, center[2] + L[2] * D];
-    const view = M4.create(), proj = M4.create();
+    const view = this._shV || (this._shV = M4.create()), proj = this._shP || (this._shP = M4.create());
     M4.lookAt(view, eye, center, up);
     M4.ortho(proj, -R, R, -R, R, 1, D * 2);
     M4.mul(this.shadowVP, proj, view);
@@ -934,19 +938,20 @@ class Renderer {
   }
   _drawHandInner(st, A, h) {
     const gl = this.gl;
-    const proj = M4.create(); M4.perspective(proj, 70 * Math.PI / 180, this.fbW / this.fbH, 0.02, 10);
+    const HM = this._handM || (this._handM = { proj: M4.create(), m: M4.create(), t: M4.create(), sm: M4.create(), tr: M4.create(), eb: null });
+    const proj = HM.proj; M4.perspective(proj, 70 * Math.PI / 180, this.fbW / this.fbH, 0.02, 10);
     // 손 위치 (카메라 공간) - 흔들림/휘두르기 애니메이션
     const sw = h.swing || 0;
     const s1 = Math.sin(sw * Math.PI), s2 = Math.sin(Math.sqrt(sw) * Math.PI);
     const bobX = h.bob ? h.bob[0] : 0, bobY = h.bob ? h.bob[1] : 0;
-    const m = M4.create(), t = M4.create();
+    const m = M4.identity(HM.m), t = HM.t;
     if (h.mesh) {
-      const flat = h.flat;
-      M4.translate(m, 0.56 + bobX - s2 * 0.25, -0.52 + bobY + s2 * 0.2 - (h.equip || 0) * 0.5, -0.9 - s1 * 0.1);
-      M4.mul(m, m, M4.rotY(t, flat ? -1.2 + s2 * 0.6 : 0.78 + s2 * 0.5));
+      const flat = h.flat, mx = h.mirror ? -1 : 1;   // mirror: 왼손(보조 손)
+      M4.translate(m, mx * (0.56 + bobX - s2 * 0.25), -0.52 + bobY + s2 * 0.2 - (h.equip || 0) * 0.5, -0.9 - s1 * 0.1);
+      M4.mul(m, m, M4.rotY(t, mx * (flat ? -1.2 + s2 * 0.6 : 0.78 + s2 * 0.5)));
       M4.mul(m, m, M4.rotX(t, -s1 * 1.1 + (flat ? 0.1 : 0)));
-      if (flat) M4.mul(m, m, M4.rotZ(t, 0.35));
-      const sc = flat ? 0.55 : 0.4; const sm = M4.create(); sm[0] = sm[5] = sm[10] = sc;
+      if (flat) M4.mul(m, m, M4.rotZ(t, mx * 0.35));
+      const sc = flat ? 0.55 : 0.4; const sm = M4.identity(HM.sm); sm[0] = sm[5] = sm[10] = sc;
       M4.mul(m, m, sm);
       const vp = proj;
       const pr = this.progs.cutout; gl.useProgram(pr.p);
@@ -973,7 +978,7 @@ class Renderer {
         M4.translate(m, 0.62 + bobX - s2 * 0.3, -0.62 + bobY + s2 * 0.25, -0.75 - s1 * 0.15);
         M4.mul(m, m, M4.rotX(t, 1.25 - s1 * 1.2));
         M4.mul(m, m, M4.rotY(t, -0.35 + s2 * 0.4));
-        const tr = M4.create(); M4.translate(tr, 0, 0, 0.125); M4.mul(m, m, tr); M4.mul(m, m, M4.rotX(t, Math.PI / 2));
+        const tr = HM.tr; M4.translate(tr, 0, 0, 0.125); M4.mul(m, m, tr); M4.mul(m, m, M4.rotX(t, Math.PI / 2));
         const sb = this._handSkin || (this._handSkin = new SkinBatch()); sb.reset();
         const layer = this.skinLayerFor(h.av), slim = !!h.av.slim, B = avatarBoxes(slim).rarm;
         sb.addPart(m, 'rarm', 0, slim, B, layer, h.light[0], h.light[1], [1, 1, 1]);
@@ -981,7 +986,7 @@ class Renderer {
         const pr = this.drawSkinBatch(sb, A, st, proj);
         return;
       }
-      const eb = new EntityBatch();
+      const eb = HM.eb || (HM.eb = new EntityBatch()); eb.reset();   // (최적화) 맨손마다 큰 버퍼를 새로 만들지 않음
       M4.translate(m, 0.62 + bobX - s2 * 0.3, -0.62 + bobY + s2 * 0.25, -0.75 - s1 * 0.15);
       M4.mul(m, m, M4.rotX(t, 1.25 - s1 * 1.2));
       M4.mul(m, m, M4.rotY(t, -0.35 + s2 * 0.4));
@@ -991,7 +996,7 @@ class Renderer {
       gl.uniform1f(pr.u.u_fogFar, 1000); gl.uniform1f(pr.u.u_fogNear, 999);
       gl.bindVertexArray(this.entVAO); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibo);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.entVBO);
-      gl.bufferData(gl.ARRAY_BUFFER, eb.f32.subarray(0, eb.n * 14), gl.DYNAMIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, eb.f32, gl.DYNAMIC_DRAW, 0, eb.n * 14);
       gl.drawElements(gl.TRIANGLES, eb.n / 4 * 6, gl.UNSIGNED_INT, 0);
     }
   }
@@ -1018,8 +1023,8 @@ class EntityBatch {
     for (let face = 0; face < 6; face++) {
       const F = FACES[face];
       const nx = F.n[0], ny = F.n[1], nz = F.n[2];
-      const wn = [m[0] * nx + m[4] * ny + m[8] * nz, m[1] * nx + m[5] * ny + m[9] * nz, m[2] * nx + m[6] * ny + m[10] * nz];
-      const l = Math.hypot(wn[0], wn[1], wn[2]) || 1;
+      const wx = m[0] * nx + m[4] * ny + m[8] * nz, wy = m[1] * nx + m[5] * ny + m[9] * nz, wz = m[2] * nx + m[6] * ny + m[10] * nz;   // (최적화) 배열 없이
+      const l = Math.sqrt(wx * wx + wy * wy + wz * wz) || 1, w0 = wx / l, w1 = wy / l, w2 = wz / l;
       for (let k = 0; k < 4; k++) {
         const c = F.pts[k];
         const px = c[0] ? x1 : x0, py = c[1] ? y1 : y0, pz = c[2] ? z1 : z0;
@@ -1027,7 +1032,7 @@ class EntityBatch {
         f[o] = m[0] * px + m[4] * py + m[8] * pz + m[12];
         f[o + 1] = m[1] * px + m[5] * py + m[9] * pz + m[13];
         f[o + 2] = m[2] * px + m[6] * py + m[10] * pz + m[14];
-        f[o + 3] = wn[0] / l; f[o + 4] = wn[1] / l; f[o + 5] = wn[2] / l;
+        f[o + 3] = w0; f[o + 4] = w1; f[o + 5] = w2;
         f[o + 6] = col[0]; f[o + 7] = col[1]; f[o + 8] = col[2];
         f[o + 9] = sky; f[o + 10] = blk;
         f[o + 11] = px; f[o + 12] = py; f[o + 13] = pz;

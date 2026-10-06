@@ -549,4 +549,6 @@ function buildTextures() {
   if (typeof buildVanillaTextures === 'function') buildVanillaTextures();
   if (typeof buildNatureTextures === 'function') buildNatureTextures();
   if (typeof buildParkourTextures === 'function') buildParkourTextures();
+  if (typeof buildMc2Textures === 'function') buildMc2Textures();
+  if (typeof buildMc3Textures === 'function') buildMc3Textures();
 }

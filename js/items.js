@@ -64,6 +64,8 @@ function defineItems() {
   if (typeof defineDimItems === 'function') defineDimItems();
   if (typeof defineVanillaItems === 'function') defineVanillaItems();
   if (typeof defineNatureItems === 'function') defineNatureItems();
+  if (typeof defineMc2Items === 'function') defineMc2Items();
+  if (typeof defineMc3Items === 'function') defineMc3Items();
   for (const d of ITEMS) if (d && d.tex && !d.block && TEX.byName[d.tex] === undefined) d.tex = 'stick';
 }
 
@@ -163,6 +165,8 @@ function defineRecipes() {
   if (typeof defineVanillaRecipes === 'function') defineVanillaRecipes();
   if (typeof defineNatureRecipes === 'function') defineNatureRecipes();
   if (typeof defineParkourRecipes === 'function') defineParkourRecipes();
+  if (typeof defineMc2Recipes === 'function') defineMc2Recipes();
+  if (typeof defineMc3Recipes === 'function') defineMc3Recipes();
   // 이름 → id 변환
   const res = (k) => k.startsWith('#') ? GROUPS[k.slice(1)] : [I(k)];
   for (const r of RECIPES) {
@@ -230,6 +234,8 @@ function defineSmelting() {
   if (typeof defineDimSmelting === 'function') defineDimSmelting();
   if (typeof defineVanillaSmelting === 'function') defineVanillaSmelting();
   if (typeof defineNatureSmelting === 'function') defineNatureSmelting();
+  if (typeof defineMc2Smelting === 'function') defineMc2Smelting();
+  if (typeof defineMc3Smelting === 'function') defineMc3Smelting();
 }
 
 // ---------------- 아이콘 시트 ----------------
