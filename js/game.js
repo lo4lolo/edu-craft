@@ -269,7 +269,7 @@ class Game {
     const pack = (d) => d ? { mods: modsToObj(d.mods), be: d.be instanceof Map ? Array.from(d.be.entries()) : (d.be || []) } : null;
     const ow = pack(st.overworld) || { mods: {}, be: [] };
     const mods = ow.mods;
-    return {
+    return { ver: VERSION,   // 저장한 버전 (이전 버전에서 열 때 알려 주려고)
       dims: { nether: pack(st.nether), end: pack(st.end) },
       id: this.worldId, name: this.worldName, seed: w.seed, type: w.type, mode: this.worldMode, created: this.worldCreated, played: Date.now(),
       time: w.time, rain: this.rainTarget, rules: this.worldRules,

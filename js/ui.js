@@ -5,7 +5,7 @@
 const $ = (s, r) => (r || document).querySelector(s);
 const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const VERSION = 'v1.7';
+const VERSION = 'v1.8';
 
 // HUD용 픽셀 아이콘 (하트/배고픔/숨)
 const HUD_ART = {

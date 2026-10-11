@@ -12,7 +12,7 @@
 <title>에듀 크래프트</title>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-<link rel="stylesheet" href="css/style.css?v=1.7">
+<link rel="stylesheet" href="css/style.css?v=1.8">
 </head>
 <body>
 <canvas id="gl"></canvas>
@@ -48,40 +48,41 @@
 <div id="cursor-item"><i></i><b></b></div>
 <div id="tooltip"></div>
 
-<script src="js/util.js?v=1.7"></script>
-<script src="js/textures.js?v=1.7"></script>
-<script src="js/blocks.js?v=1.7"></script>
-<script src="js/world.js?v=1.7"></script>
-<script src="js/redstone.js?v=1.7"></script>
-<script src="js/mesher.js?v=1.7"></script>
-<script src="js/skin.js?v=1.7"></script>
-<script src="js/renderer.js?v=1.7"></script>
-<script src="js/items.js?v=1.7"></script>
-<script src="js/player.js?v=1.7"></script>
-<script src="js/entities.js?v=1.7"></script>
-<script src="js/audio.js?v=1.7"></script>
-<script src="js/input.js?v=1.7"></script>
-<script src="js/ui.js?v=1.7"></script>
-<script src="js/survival.js?v=1.7"></script>
-<script src="js/builder.js?v=1.7"></script>
-<script src="js/avatar.js?v=1.7"></script>
-<script src="js/net.js?v=1.7"></script>
-<script src="js/game.js?v=1.7"></script>
-<script src="js/dims.js?v=1.7"></script>
-<script src="js/vanilla.js?v=1.7"></script>
-<script src="js/nature.js?v=1.7"></script>
-<script src="js/parkour.js?v=1.7"></script>
-<script src="js/party.js?v=1.7"></script>
-<script src="js/offhand.js?v=1.7"></script>
-<script src="js/achieve.js?v=1.7"></script>
-<script src="js/mc2.js?v=1.7"></script>
-<script src="js/mc3.js?v=1.7"></script>
-<script src="js/codemaster.js?v=1.7"></script>
-<script src="js/code2.js?v=1.7"></script>
-<script src="js/code3.js?v=1.7"></script>
-<script src="js/menuart.js?v=1.7"></script>
-<script src="js/perf.js?v=1.7"></script>
-<script src="js/save.js?v=1.7"></script>
+<script src="js/util.js?v=1.8"></script>
+<script src="js/rescue.js?v=1.8"></script>
+<script src="js/textures.js?v=1.8"></script>
+<script src="js/blocks.js?v=1.8"></script>
+<script src="js/world.js?v=1.8"></script>
+<script src="js/redstone.js?v=1.8"></script>
+<script src="js/mesher.js?v=1.8"></script>
+<script src="js/skin.js?v=1.8"></script>
+<script src="js/renderer.js?v=1.8"></script>
+<script src="js/items.js?v=1.8"></script>
+<script src="js/player.js?v=1.8"></script>
+<script src="js/entities.js?v=1.8"></script>
+<script src="js/audio.js?v=1.8"></script>
+<script src="js/input.js?v=1.8"></script>
+<script src="js/ui.js?v=1.8"></script>
+<script src="js/survival.js?v=1.8"></script>
+<script src="js/builder.js?v=1.8"></script>
+<script src="js/avatar.js?v=1.8"></script>
+<script src="js/net.js?v=1.8"></script>
+<script src="js/game.js?v=1.8"></script>
+<script src="js/dims.js?v=1.8"></script>
+<script src="js/vanilla.js?v=1.8"></script>
+<script src="js/nature.js?v=1.8"></script>
+<script src="js/parkour.js?v=1.8"></script>
+<script src="js/party.js?v=1.8"></script>
+<script src="js/offhand.js?v=1.8"></script>
+<script src="js/achieve.js?v=1.8"></script>
+<script src="js/mc2.js?v=1.8"></script>
+<script src="js/mc3.js?v=1.8"></script>
+<script src="js/codemaster.js?v=1.8"></script>
+<script src="js/code2.js?v=1.8"></script>
+<script src="js/code3.js?v=1.8"></script>
+<script src="js/menuart.js?v=1.8"></script>
+<script src="js/perf.js?v=1.8"></script>
+<script src="js/save.js?v=1.8"></script>
 <script>
   window.addEventListener('load', () => {
     if (window.__reloadingFresh) return;
@@ -89,6 +90,7 @@
     catch (e) {
       console.error(e);
       if (e instanceof ReferenceError && typeof reloadFresh === 'function' && reloadFresh(e.message)) return;
+      if (typeof ecRescue !== 'undefined') { ecRescue.show('start', e); return; }
       document.getElementById('screens').innerHTML = '<div class="screen show"><div class="panel"><h2>실행할 수 없어요</h2><p>' + e.message + '</p><p>Ctrl + F5 로 새로고침해 보세요. 그래도 같으면 최신 크롬/엣지/사파리에서 열어 주세요. (WebGL2 필요)</p></div></div>';
     }
   });

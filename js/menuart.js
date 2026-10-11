@@ -161,6 +161,7 @@ UI.prototype.showMain = function () {
         <button class="btn small av-btn" id="m-avatar"><img class="av-face" id="m-face" alt="">아바타</button>
         <button class="btn small" id="m-settings">⚙ 설정</button>
         <button class="btn small" id="m-help">📖 도움말</button>
+        <button class="btn small" id="m-rescue" title="게임이 잘 안 될 때 · 이전 버전으로 열기">🛠 문제 해결</button>
         ${canOpenNewWindow() ? '<button class="btn small" id="m-newwin">↗ 새 창</button>' : ''}
       </div>
     </div>
@@ -184,6 +185,7 @@ UI.prototype.showMain = function () {
   this.fillFace($('#m-face', s));
   $('#m-settings', s).onclick = () => this.showSettings(() => this.showMain());
   $('#m-help', s).onclick = () => this.showHelp(() => this.showMain());
+  { const rb = $('#m-rescue', s); if (rb) rb.onclick = () => { if (typeof ecRescue !== 'undefined') ecRescue.show('menu'); }; }
   this.show('menu-main');
   // 이어하기: 가장 최근에 한 세계
   DB.list().then(list => {
