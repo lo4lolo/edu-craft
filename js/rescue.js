@@ -56,7 +56,7 @@ const ecRescue = {
   async versions() {
     try {
       const r = await fetch(new URL('versions/list.json', document.baseURI).href + '?t=' + Date.now(), { cache: 'no-store' });
-      if (r.ok) { const j = await r.json(); if (Array.isArray(j) && j.length) return j; }
+      if (r.ok) { const j = await r.json(); const out = []; const add = (x) => { if (Array.isArray(x)) x.forEach(add); else if (x && Array.isArray(x.value)) x.value.forEach(add); else if (x && x.v) out.push(x); }; add(j); if (out.length) return out; }
     } catch (e) { }
     return /github\.io/.test(location.host) ? EC_VERSIONS_FALLBACK : [];
   },
